@@ -44,6 +44,20 @@ const SPRITE_SHEETS = {
 };
 const CHAPTER_VISTAS=Object.assign(new Image(),{src:'assets/environments/chapter-vistas.png'});
 const PAINTED_PROPS=Object.assign(new Image(),{src:'assets/environments/painted-props.png'});
+function coreArtReady(){
+  return CHAPTER_VISTAS.complete&&CHAPTER_VISTAS.naturalWidth>0&&
+    PAINTED_PROPS.complete&&PAINTED_PROPS.naturalWidth>0&&
+    Object.values(SPRITE_SHEETS).every(img=>img.complete&&img.naturalWidth>0);
+}
+function drawLoadingVeil(){
+  ctx.save();ctx.fillStyle='rgba(8,6,14,.88)';ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center';ctx.fillStyle='#e0c46a';ctx.font='bold 22px Georgia, serif';
+  ctx.fillText('ILLUMINATING THE CHRONICLE…',W/2,H/2-8);
+  ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';
+  ctx.fillText('PREPARING PAINTED WORLDS AND FIGHTERS',W/2,H/2+18);
+  const p=.5+.5*Math.sin(gameT*.08);ctx.fillStyle='rgba(224,196,106,'+(.3+.5*p)+')';ctx.fillRect(W/2-90,H/2+34,180*p,2);
+  ctx.restore();
+}
 
 // ---- 2.5D world ----
 // x = horizontal screen, z = depth (0 = far/top of floor, 1 = near/bottom).
@@ -556,7 +570,8 @@ function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 
 let player, enemies, particles, floatTexts, ghosts, items, rings, projectiles;
 let scene='title', score=0, banner=null, levelIdx=0, level=null, waveNum=0, outcomeT=0, introT=0, mapSel=0;
-let codexTab='moves', codexPage=0, codexReturn='title', codexPreview=null, codexPreviewType='', controlsReturn='title';
+let runStats={frames:0,damageTaken:0,attacks:0,hits:0,dodges:0,blocks:0};
+let codexTab='moves', codexPage=0, codexReturn='title', codexPreview=null, codexPreviewType='', controlsReturn='title', settingsReturn='title';
 // ---- side-scroll camera + encounter flow ----
 let camX=0, worldW=W;                 // camera offset and current level width
 let encounterState='walk';            // 'walk' (free traversal) | 'locked' (fighting an encounter)
@@ -662,6 +677,7 @@ function startLevel(idx){
   reinforcements=[]; reinforcementT=0;
   TH = THEMES[idx] || THEMES[0];
   player = makeFighter(120, 0.8, true);
+  runStats={frames:0,damageTaken:0,attacks:0,hits:0,dodges:0,blocks:0};
   enemies=[]; particles=[]; floatTexts=[]; ghosts=[]; items=[]; rings=[]; projectiles=[];
   buildScenery(worldW);
   buildCombatProps();
@@ -680,7 +696,7 @@ function triggerGate(){
     discoverEnemy(level.boss);
     showBanner('MINI-BOSS', level.bossName); sfx('roar');
   } else {
-    const cap=levelIdx<2?2:3;
+    const cap=activeEnemyCap();
     const opening=g.roster.slice(0,cap);
     reinforcements=g.roster.slice(cap);
     for (const type of opening) spawnEncounterEnemy(type);
@@ -690,8 +706,12 @@ function triggerGate(){
   items = items.filter(it=>!it.dead); spawnItems(2);
 }
 function spawnEncounterEnemy(type){
-  enemies.push(makeFighter(lockCamX + rand(W*0.62, W-70), rand(0.42,0.95), false, type));
+  const e=makeFighter(lockCamX + rand(W*0.62, W-70), rand(0.42,0.95), false, type);
+  e.iframe=18; enemies.push(e);
   discoverEnemy(type);
+}
+function activeEnemyCap(){
+  return SETTINGS.difficulty===2&&levelIdx>=2?3:2;
 }
 function discoverEnemy(type){
   if (!CAMPAIGN.seen.includes(type)){ CAMPAIGN.seen.push(type); saveProgress(); }
@@ -799,6 +819,7 @@ function startDodge(p){
     floatTexts.push({x:p.x, y:zToY(p.z)-90, t:24, txt:'TIRED', c:'#caa'}); return false;
   }
   p.stamina-=ROLL_COST; p.staDelay=36; p.state='dash'; p.stateT=0;
+  if(p.isPlayer)runStats.dodges++;
   p.vx=p.face*10.2; p.iframe=9; addShake(1); sfx('dodge');
   for (let i=0;i<8;i++) particles.push({x:p.x-p.face*10, y:zToY(p.z), vx:rand(-2,2)-p.face*1.5, vy:rand(-2.5,-0.5), life:rand(10,20), c:'#7a6a4a', r:rand(2,4)});
   return true;
@@ -813,6 +834,7 @@ function startAttack(f, kind){
   else if (kind==='cleave') f.atkDef = CLEAVE;
   else if (kind==='earthbreaker') f.atkDef = EARTHBREAKER;
   else f.atkDef = ATK[kind] || ATK.enemy;
+  if(f.isPlayer)runStats.attacks++;
   if (f.isPlayer) sfx(kind==='special'?'special':((kind==='heavy'||kind==='rising'||kind==='earthbreaker')?'swingheavy':'swing'));
   else if (f.atkDef.tele) sfx('warn_'+attackTelegraphType(f.atkDef));
 }
@@ -880,15 +902,18 @@ function tryHit(attacker, def){
     if (t.hp<=0 && t.state!=='downed') continue;          // downed skeletons can still be finished off
     if (t.iframe>0 && !attacker.isPlayer) continue;
     const dz = Math.abs(t.z - attacker.z);
+    // Lane tolerance follows visible body size. This prevents apparent sword
+    // contact from whiffing while preserving deliberate up/down evasion.
+    const laneTolerance = clamp(0.135 + (attacker.w+t.w)*0.00042, 0.145, def.aoe?0.25:0.19);
     const reachableHeight = t.y > -120;                 // can still clip airborne
     let inRange, aligned;
     if (def.aoe){                                       // whirlwind: hits all around
       inRange = Math.abs(t.x - attacker.x) < def.reach;
-      aligned = dz < 0.22;
+      aligned = dz < Math.max(0.22,laneTolerance);
     } else {
       const dx = (t.x - attacker.x) * attacker.face;
       inRange = dx > -8 && dx < def.reach + t.w*0.5;
-      aligned = dz < 0.14;                              // must share the plane
+      aligned = dz < laneTolerance;                     // must visibly share the plane
     }
     if (inRange && aligned && reachableHeight){
       hitTarget(attacker, t, def);
@@ -905,6 +930,7 @@ function hitTarget(attacker, t, def){
   const resistsLight=!!(attacker&&attacker.isPlayer&&t.comboArmor>0&&!def.launch&&!def.guardbreak);
   // shield block — only works against attacks from the front (shield side)
   if (t.blocking && t.state==='block' && (attacker.x - t.x)*t.face > -10){
+    if(t.isPlayer)runStats.blocks++;
     addShake(3); freeze(5);
     spawnSpark(t.x, zToY(t.z) - 40, '#cfd8ff', 8);
     spawnRing(t.x, zToY(t.z)-40, '#cfe0ff', 22);
@@ -918,7 +944,10 @@ function hitTarget(attacker, t, def){
   }
   // enemy attacks scale with difficulty
   let dmg = def.dmg * ((attacker && !attacker.isPlayer) ? DIFF[SETTINGS.difficulty].dmg : 1);
+  if(attacker&&attacker.isPlayer&&t.exposed>0) dmg*=1.12;
   t.hp -= dmg;
+  if(t.isPlayer)runStats.damageTaken+=dmg;
+  if(attacker&&attacker.isPlayer)runStats.hits++;
   sfx((def.launch || def.guardbreak) ? 'hitheavy' : 'hit');
   t.flash = 6; t.iframe = 6;
   let chainHits=0;
@@ -949,7 +978,7 @@ function hitTarget(attacker, t, def){
   spawnSpark(t.x, zToY(t.z) - 38 + t.y, def.launch ? '#ffd36a' : '#ffffff', def.launch?16:10);
   spawnRing(t.x, zToY(t.z)-38+t.y, heavy?'#ffd36a':'#ffffff', heavy?34:22);
   if (heavy) screenFlash = Math.max(screenFlash, 0.18);
-  if (SETTINGS.dmgNumbers) floatTexts.push({x:t.x, y:zToY(t.z)-80+t.y, t:28, txt:Math.round(dmg), c: def.launch?'#ffd36a':'#fff'});
+  if (SETTINGS.dmgNumbers) floatTexts.push({x:t.x, y:zToY(t.z)-80+t.y, t:28, txt:Math.round(dmg), c:t.exposed>0?'#fff0a8':(def.launch?'#ffd36a':'#fff')});
   if (t.hp<=0){
     // SKELETON: collapses to a heap and reassembles — unless you finish it while it's down
     if (t.type==='skeleton' && !t.downed){
@@ -1014,6 +1043,7 @@ function update(){
   // global hit-pause
   if (hitstop>0){ hitstop--; return; }
   tickInputBuffer();
+  runStats.frames++;
 
   // ---- PLAYER ----
   const p = player;
@@ -1122,7 +1152,7 @@ function update(){
   // Keep fights readable: at most 2 early-game or 3 late-game foes are active.
   // Larger rosters enter as reinforcements after the player creates space.
   if (scene==='playing' && encounterState==='locked' && !bossActive && reinforcements.length){
-    const cap=levelIdx<2?2:3;
+    const cap=activeEnemyCap();
     const active=enemies.filter(e=>e.state!=='dead').length;
     if(active<cap){
       reinforcementT++;
@@ -1197,6 +1227,7 @@ function update(){
     const hot = pr.fire || pr.kind==='fireball' || pr.kind==='soul';
     // shield blocks projectiles coming at the front (chips stamina; boulders chip hard)
     if (player.state==='block' && Math.sign(pr.vx) === -player.face){
+      runStats.blocks++;
       addShake(pr.big?5:2); freeze(3); spawnSpark(pr.x, zToY(pr.z)-42, hot?'#ffb060':'#cfe0ff', 6); spawnRing(player.x, zToY(player.z)-42, '#cfe0ff', 18);
       player.stamina -= pr.big?28:hot?10:6; player.staDelay=40;
       if (player.stamina<=0){ player.stamina=0; guardBreak(player, {x:pr.x, face:player.face}); }
@@ -1205,6 +1236,7 @@ function update(){
     }
     // hit
     const admg = Math.round((pr.dmg||7) * DIFF[SETTINGS.difficulty].dmg);
+    runStats.damageTaken+=admg;
     player.hp -= admg; player.flash=6; player.iframe=8; player.hitstun=pr.big?24:14; player.state='hurt'; player.stateT=0;
     pushBack(player, Math.sign(pr.vx), pr.knock||3); addShake(pr.big?7:4); freeze(pr.big?6:4);
     spawnSpark(player.x, zToY(player.z)-40, hot?'#ff8a3a':'#ff9a9a', hot?16:10);
@@ -1340,7 +1372,7 @@ function enemyAI(e){
 }
 function attackSlotAvailable(e){
   if (e.boss) return true;
-  const cap = levelIdx<2 ? 1 : 2;
+  const cap = SETTINGS.difficulty===0 ? 1 : (levelIdx<2 ? 1 : 2);
   return enemies.filter(o=>o!==e && o.hp>0 && (o.state==='attack'||o.aiCommitted)).length < cap;
 }
 function routeAroundProps(e,mvx,mvz){
@@ -1370,6 +1402,7 @@ function moveToward(e, dx, dz, gap, spd, zspd){
 // per-boss brains
 function bossAI(e, dx, dz, dist){
   const lined = Math.abs(dz) < 0.18;
+  if(e.exposed>0){e.vx=0;e.vz=0;e.state='idle';return;}
   if (e.type==='wolfboss'){
     if (e.atkCD<=0){
       if (e.hp < e.maxHp*0.65 && e.shootCD<=0 && enemies.filter(x=>x.type==='wolf'&&x.hp>0).length<2){ startAttack(e,'howl'); e.atkCD=rand(120,170); e.shootCD=rand(280,380); return; }
@@ -1447,12 +1480,14 @@ function resolveCombatPropCollision(f,oldX){
 
 function updateFighter(f){
   const oldX=f.x;
+  if(f._lastState!==f.state){f.stateT=0;f._lastState=f.state;}
   f.stateT++;
   if (f.flash>0) f.flash--;
   if (f.iframe>0) f.iframe--;
   if (f.bladeFlash>0) f.bladeFlash--;
   if (f.stunReset>0) f.stunReset--; else f.stunHits=0;
   if (f.comboArmor>0) f.comboArmor--;
+  if (f.exposed>0) f.exposed--;
 
   if(f.state==='grabbed'&&f.grabbedBy){
     const p=f.grabbedBy;f.x=p.x+p.face*20;f.z=p.z;f.y=-12;f.face=-p.face;f.vx=0;f.vz=0;
@@ -1508,7 +1543,12 @@ function updateFighter(f){
     if (f.stateT>=total){
       if (f.aerial && f.y<0){ f.state='jump'; }            // recovered mid-air → keep falling
       else if (!f.isPlayer && f.chain>0 && f.atkKind==='enemy'){ f.chain--; startAttack(f,'jab'); } // grunt 2nd swing
-      else { f.state='idle'; f.aerial=false;
+      else {
+        if(f.boss&&d.tele){
+          f.exposed=d.guardbreak||d.slam||d.charge?32:22;
+          floatTexts.push({x:f.x,y:zToY(f.z)-110,t:24,txt:'OPEN',c:'#fff0a8'});
+        }
+        f.state='idle'; f.aerial=false;
         if (f.isPlayer && !f.aerial){ f.comboTimer = 26; } } // window to continue combo
     }
   }
@@ -2616,6 +2656,10 @@ function drawHUD(){
       if (b.phase===2){ ctx.fillStyle='#ff7a4a'; ctx.font='bold 9px ui-monospace, monospace'; ctx.textAlign='left'; ctx.fillText('ENRAGED', bx+2, H-20); }
       ctx.fillStyle='#ffd9d9'; ctx.font='bold 11px ui-monospace, monospace'; ctx.textAlign='center';
       ctx.fillText((level&&level.bossName?level.bossName:'MINI-BOSS').toUpperCase(), W/2, H-36);
+      if(b.exposed>0){
+        ctx.fillStyle='#fff0a8';ctx.font='bold 10px ui-monospace, monospace';
+        ctx.fillText('OPEN  ·  +12% DAMAGE',W/2,H-48);
+      }
       if(b.state==='attack'&&b.atkDef&&b.stateT<b.atkDef.wind){
         ctx.fillStyle='#ffcf7a';ctx.font='bold 10px ui-monospace, monospace';
         ctx.fillText(ATTACK_NAMES[b.atkKind]||'ATTACK',W/2,H-48);
@@ -2725,7 +2769,7 @@ function drawTitle(){
   if(button(78,326,330,50,progress>0?'CONTINUE THE BALLAD':'BEGIN THE BALLAD',{size:16}))scene='map';
   if(button(78,390,104,34,'CODEX',{size:12}))openCodex('title');
   if(button(190,390,104,34,'CONTROLS',{size:11})){controlsReturn='title';scene='controls';}
-  if(button(302,390,104,34,'SETTINGS',{size:11}))scene='settings';
+  if(button(302,390,104,34,'SETTINGS',{size:11})){settingsReturn='title';scene='settings';}
   ctx.fillStyle='#7f7688';ctx.font='10px ui-monospace, monospace';ctx.textAlign='left';
   ctx.fillText(progress+' / '+LEVELS.length+' CHAPTERS CLEARED',78,458);
   ctx.fillStyle='#b59651';ctx.beginPath();ctx.arc(446,446,25,0,7);ctx.fill();
@@ -2881,15 +2925,16 @@ function drawControls(){
 }
 function drawPauseMenu(){
   draw();ctx.fillStyle='rgba(8,6,14,.68)';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='rgba(20,16,27,.96)';roundRect(W/2-150,105,300,330,8);ctx.fill();
-  ctx.strokeStyle='#b79043';ctx.lineWidth=2;roundRect(W/2-150,105,300,330,8);ctx.stroke();
-  ctx.textAlign='center';ctx.fillStyle='#f0cd65';ctx.font='bold 34px Georgia, serif';ctx.fillText('PAUSED',W/2,158);
-  ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText(level?level.name.toUpperCase():'CAMPAIGN',W/2,180);
-  if(button(W/2-100,207,200,44,'RESUME',{size:16}))scene='playing';
-  if(button(W/2-100,263,200,40,'CONTROLS',{size:14})){controlsReturn='paused';scene='controls';}
-  if(button(W/2-100,315,200,40,"KNIGHT'S CODEX",{size:13}))openCodex('paused');
-  if(button(W/2-100,367,200,40,'WORLD MAP',{size:13}))scene='map';
-  ctx.fillStyle='#756d80';ctx.font='10px ui-monospace, monospace';ctx.fillText('ESC  RESUME',W/2,421);
+  ctx.fillStyle='rgba(20,16,27,.96)';roundRect(W/2-150,76,300,400,8);ctx.fill();
+  ctx.strokeStyle='#b79043';ctx.lineWidth=2;roundRect(W/2-150,76,300,400,8);ctx.stroke();
+  ctx.textAlign='center';ctx.fillStyle='#f0cd65';ctx.font='bold 34px Georgia, serif';ctx.fillText('PAUSED',W/2,124);
+  ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText(level?level.name.toUpperCase():'CAMPAIGN',W/2,145);
+  if(button(W/2-100,165,200,42,'RESUME',{size:16}))scene='playing';
+  if(button(W/2-100,216,200,38,'CONTROLS',{size:14})){controlsReturn='paused';scene='controls';}
+  if(button(W/2-100,263,200,38,"KNIGHT'S CODEX",{size:13}))openCodex('paused');
+  if(button(W/2-100,310,200,38,'SETTINGS',{size:13})){settingsReturn='paused';scene='settings';}
+  if(button(W/2-100,357,200,38,'WORLD MAP',{size:13}))scene='map';
+  ctx.fillStyle='#756d80';ctx.font='10px ui-monospace, monospace';ctx.fillText('ESC  RESUME',W/2,448);
 }
 
 // ================= SETTINGS =================
@@ -2909,7 +2954,7 @@ function drawSettings(){
   row(252, 'Screen shake', SETTINGS.shakeOn?'ON':'OFF', ()=>{ SETTINGS.shakeOn=!SETTINGS.shakeOn; });
   row(296, 'Damage numbers', SETTINGS.dmgNumbers?'ON':'OFF', ()=>{ SETTINGS.dmgNumbers=!SETTINGS.dmgNumbers; });
   if (button(cx-95, 344, 190, 30, 'RESET PROGRESS', {size:12})) resetProgress();
-  if (button(20, H-50, 120, 34, '← BACK', {size:13})){ scene='title'; }
+  if (button(20, H-50, 120, 34, '← BACK', {size:13})){ scene=settingsReturn; }
 }
 
 // ================= END OVERLAY (victory / defeat) =================
@@ -2921,20 +2966,26 @@ function drawEndOverlay(){
     ctx.fillStyle='#ffe9b0'; ctx.font='bold 46px ui-monospace, monospace'; ctx.fillText('VICTORY!', W/2, H/2-54);
     ctx.fillStyle='#d8b96a'; ctx.font='16px ui-monospace, monospace'; ctx.fillText(level.name+' cleared  ·  Score '+score, W/2, H/2-20);
     const last = levelIdx>=LEVELS.length-1;
-    if (last){ ctx.fillStyle='#9fe0a0'; ctx.font='14px ui-monospace, monospace'; ctx.fillText('You have cleared the campaign!', W/2, H/2+4); }
-    if (!last && button(W/2-200, H/2+22, 185, 44, 'NEXT LEVEL')) startLevel(levelIdx+1);
-    if (button(W/2+15, H/2+22, 185, 44, 'WORLD MAP')) scene='map';
+    if (last){ ctx.fillStyle='#9fe0a0'; ctx.font='14px ui-monospace, monospace'; ctx.fillText('You have cleared the campaign!', W/2, H/2+2); }
+    const accuracy=runStats.attacks?Math.round(runStats.hits/runStats.attacks*100):0;
+    ctx.fillStyle='#aaa1b5';ctx.font='11px ui-monospace, monospace';
+    ctx.fillText('TIME '+Math.floor(runStats.frames/3600)+':'+String(Math.floor(runStats.frames/60)%60).padStart(2,'0')+
+      '  ·  DAMAGE '+Math.round(runStats.damageTaken)+'  ·  HIT RATE '+accuracy+'%',W/2,H/2+22);
+    if (!last && button(W/2-200, H/2+38, 185, 44, 'NEXT LEVEL')) startLevel(levelIdx+1);
+    if (button(W/2+15, H/2+38, 185, 44, 'WORLD MAP')) scene='map';
   } else {
     ctx.fillStyle='#ff8a8a'; ctx.font='bold 46px ui-monospace, monospace'; ctx.fillText('YOU FELL', W/2, H/2-54);
     ctx.fillStyle='#cbb88a'; ctx.font='15px ui-monospace, monospace'; ctx.fillText('Score '+score, W/2, H/2-20);
-    if (button(W/2-200, H/2+22, 185, 44, 'RETRY')) startLevel(levelIdx);
-    if (button(W/2+15, H/2+22, 185, 44, 'WORLD MAP')) scene='map';
+    ctx.fillStyle='#aaa1b5';ctx.font='11px ui-monospace, monospace';
+    ctx.fillText('FIGHT '+waveNum+'/'+level.gates.length+'  ·  DAMAGE '+Math.round(runStats.damageTaken)+'  ·  DODGES '+runStats.dodges,W/2,H/2+8);
+    if (button(W/2-200, H/2+28, 185, 44, 'RETRY')) startLevel(levelIdx);
+    if (button(W/2+15, H/2+28, 185, 44, 'WORLD MAP')) scene='map';
   }
 }
 
 // scene keyboard shortcuts
 addEventListener('keydown', e=>{ const k=e.key.toLowerCase();
-  if (k==='enter' && scene==='title') scene='map';
+  if (k==='enter' && scene==='title' && coreArtReady()) scene='map';
   if (k==='m'){
     if(scene==='codex') scene=codexReturn;
     else if(['title','map','playing'].includes(scene)) openCodex(scene);
@@ -2943,7 +2994,8 @@ addEventListener('keydown', e=>{ const k=e.key.toLowerCase();
     if(scene==='codex') scene=codexReturn;
     else if(scene==='controls') scene=controlsReturn;
     else if(scene==='paused') scene='playing';
-    else if(scene==='settings'||scene==='map') scene='title';
+    else if(scene==='settings') scene=settingsReturn;
+    else if(scene==='map') scene='title';
     else if(scene==='playing') scene='paused';
   }
 });
@@ -2962,7 +3014,7 @@ const AUDIO = (function(){
   };
   const bossTrack=new Audio('assets/audio/hope-battle.ogg');
   bossTrack.loop=true; bossTrack.volume=.24;
-  let bossTrackPlaying=false;
+  let bossTrackPlaying=false, duckTimer=null, bossFadeTimer=null;
   function ensure(){
     if (actx) return actx;
     try { actx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){ return null; }
@@ -2980,6 +3032,18 @@ const AUDIO = (function(){
     const spec=recorded[name]; if(!spec) return;
     const a=new Audio(spec[0]); a.volume=spec[1]; a.playbackRate=.96+Math.random()*.08;
     a.play().catch(()=>{});
+  }
+  function duckMusic(amount=.48){
+    if(!mGain||!actx)return;
+    const now=actx.currentTime;
+    mGain.gain.cancelScheduledValues(now);
+    mGain.gain.setTargetAtTime(.30*amount,now,.018);
+    bossTrack.volume=Math.min(bossTrack.volume,.14);
+    clearTimeout(duckTimer);
+    duckTimer=setTimeout(()=>{
+      if(mGain&&actx)mGain.gain.setTargetAtTime(.30,actx.currentTime,.12);
+      if(bossTrackPlaying)bossTrack.volume=.24;
+    },180);
   }
   // --- primitive voices ---
   function tone(freq,t0,dur,type,gain,dest){
@@ -3005,6 +3069,7 @@ const AUDIO = (function(){
   function play(name){
     if(!SETTINGS.soundOn || !ensure()) return; unlock();
     playRecorded(name);
+    if(['hitheavy','guardbreak','wallhit','slam','bossdie'].includes(name))duckMusic(name==='bossdie'?.34:.48);
     const t=actx.currentTime, vary=0.94+Math.random()*0.12;
     switch(name){
       case 'swing':     noise(t,0.12,0.28,'bandpass',1300*vary); glide(900*vary,300,t,0.13,'triangle',0.10); break;
@@ -3100,12 +3165,20 @@ const AUDIO = (function(){
   function stopMusic(){ musicPlaying=false; if(schedTimer){ clearInterval(schedTimer); schedTimer=null; } }
   function startBossMusic(){
     if(bossTrackPlaying) return;
-    bossTrackPlaying=true; bossTrack.currentTime=0;
+    clearInterval(bossFadeTimer);bossTrackPlaying=true; bossTrack.currentTime=0;bossTrack.volume=0;
     bossTrack.play().catch(()=>{bossTrackPlaying=false;});
+    bossFadeTimer=setInterval(()=>{
+      bossTrack.volume=Math.min(.24,bossTrack.volume+.025);
+      if(bossTrack.volume>=.24)clearInterval(bossFadeTimer);
+    },45);
   }
   function stopBossMusic(){
     if(!bossTrackPlaying) return;
-    bossTrack.pause(); bossTrack.currentTime=0; bossTrackPlaying=false;
+    clearInterval(bossFadeTimer);bossTrackPlaying=false;
+    bossFadeTimer=setInterval(()=>{
+      bossTrack.volume=Math.max(0,bossTrack.volume-.035);
+      if(bossTrack.volume<=0){clearInterval(bossFadeTimer);bossTrack.pause();bossTrack.currentTime=0;}
+    },35);
   }
   function music(on){
     if(!on){stopMusic();stopBossMusic();return;}
@@ -3132,7 +3205,10 @@ function tick(){
   else if (scene==='controls'){ drawControls(); }
   else if (scene==='paused'){ drawPauseMenu(); }
   else if (scene==='settings'){ drawSettings(); }
-  else { drawTitle(); }
+  else {
+    if(!coreArtReady()){mouse.click=false;drawTitle();drawLoadingVeil();}
+    else drawTitle();
+  }
   // background music only plays during a level (and when enabled)
   AUDIO.music(scene==='playing' && SETTINGS.soundOn && SETTINGS.musicOn);
   mouse.click=false;
