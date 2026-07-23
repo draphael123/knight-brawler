@@ -2104,8 +2104,8 @@ function drawTroll(f){
 
 function drawHUD(){
   const chapterColors=['#d4b653','#8c6aa8','#6ca3b8','#d0643f','#9b4963'];
-  ctx.save();ctx.fillStyle='rgba(12,9,18,.88)';ctx.beginPath();ctx.moveTo(W-330,0);ctx.lineTo(W,0);ctx.lineTo(W,72);ctx.lineTo(W-350,72);ctx.closePath();ctx.fill();
-  ctx.fillStyle=chapterColors[levelIdx]||'#d8b96a';ctx.fillRect(W-9,0,9,72);ctx.textAlign='right';ctx.font='bold 11px Georgia, serif';ctx.fillText('CHAPTER '+String(levelIdx+1).padStart(2,'0'),W-22,18);ctx.restore();
+  ctx.save();ctx.fillStyle='rgba(12,9,18,.88)';ctx.beginPath();ctx.moveTo(W/2-98,0);ctx.lineTo(W/2+98,0);ctx.lineTo(W/2+88,27);ctx.lineTo(W/2-88,27);ctx.closePath();ctx.fill();
+  ctx.fillStyle=chapterColors[levelIdx]||'#d8b96a';ctx.fillRect(W/2-98,0,196,3);ctx.textAlign='center';ctx.font='bold 11px Georgia, serif';ctx.fillText('CHAPTER '+String(levelIdx+1).padStart(2,'0'),W/2,18);ctx.restore();
   // player health
   ctx.fillStyle='#000'; ctx.fillRect(20,18,260,18);
   ctx.fillStyle='#3a8a4a'; ctx.fillRect(22,20,256*(clamp(player.hp,0,player.maxHp)/player.maxHp),14);
