@@ -31,9 +31,16 @@ const SPRITE_SHEETS = {
   guard:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
   archer:Object.assign(new Image(),{src:'assets/sprites/archer-sheet.png'}),
   xbow:Object.assign(new Image(),{src:'assets/sprites/archer-sheet.png'}),
+  cultist:Object.assign(new Image(),{src:'assets/sprites/caster-sheet.png'}),
+  mage:Object.assign(new Image(),{src:'assets/sprites/caster-sheet.png'}),
   skeleton:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
   wraith:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
-  blackknight:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'})
+  blackknight:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
+  wolf:Object.assign(new Image(),{src:'assets/sprites/wolf-sheet.png'}),
+  wolfboss:Object.assign(new Image(),{src:'assets/sprites/wolf-sheet.png'}),
+  boar:Object.assign(new Image(),{src:'assets/sprites/boar-sheet.png'}),
+  treant:Object.assign(new Image(),{src:'assets/sprites/treant-sheet.png'}),
+  troll:Object.assign(new Image(),{src:'assets/sprites/troll-sheet.png'})
 };
 const CHAPTER_VISTAS=Object.assign(new Image(),{src:'assets/environments/chapter-vistas.png'});
 
@@ -1645,16 +1652,26 @@ function drawSpriteFighter(f){
   const sheet=SPRITE_SHEETS[f.type];if(!sheet||!sheet.complete||!sheet.naturalWidth)return false;
   const baseY=zToY(f.z),s=depthScale(f.z),frame=spriteFrameFor(f),col=frame%4,row=Math.floor(frame/4);
   const sw=sheet.naturalWidth/4,sh=sheet.naturalHeight/2;
-  const dh=f.h*s*(f.isPlayer?1.72:1.62),dw=dh*(sw/sh);
+  const cellScale={
+    wolf:2.35,wolfboss:2.35,boar:2.18,treant:1.58,troll:1.62
+  }[f.type]||(f.isPlayer?1.72:1.62);
+  const dh=f.h*s*cellScale,dw=dh*(sw/sh);
   // The generated cells have uneven transparent padding. Align the visible
   // boots rather than the cell edge to the floor for stable ground contact.
   const footSets={
     knight:[417,422,425,426,373,374,376,387],
     archer:[399,399,396,396,378,380,373,373],
     xbow:[399,399,396,396,378,380,373,373],
+    cultist:[465,469,464,465,427,424,426,415],
+    mage:[465,469,464,465,427,424,426,415],
     skeleton:[453,454,452,453,406,407,413,407],
     wraith:[453,454,452,453,406,407,413,407],
-    blackknight:[453,454,452,453,406,407,413,407]
+    blackknight:[453,454,452,453,406,407,413,407],
+    wolf:[406,406,404,401,337,337,346,337],
+    wolfboss:[406,406,404,401,337,337,346,337],
+    boar:[383,386,386,386,343,327,356,350],
+    treant:[470,474,474,477,449,450,450,450],
+    troll:[416,416,415,413,406,401,406,423]
   };
   const footBottoms=footSets[f.type]||[404,404,402,402,375,373,374,382];
   const footBottom=footBottoms[frame]||sh;
@@ -1683,12 +1700,13 @@ function drawSpriteFighter(f){
 }
 
 function drawFighter(f){
-  // non-humanoid creatures have their own renderers
+  // Every converted family uses the painted sheet. The original procedural
+  // renderers remain below as resilient fallbacks while images load.
+  if (drawSpriteFighter(f)) return;
   if (f.body==='wolf'){ drawWolf(f); return; }
   if (f.body==='boar'){ drawBoar(f); return; }
   if (f.body==='treant'){ drawTreant(f); return; }
   if (f.body==='troll'){ drawTroll(f); return; }
-  if (drawSpriteFighter(f)) return;
 
   const baseY = zToY(f.z);
   const s = depthScale(f.z);
