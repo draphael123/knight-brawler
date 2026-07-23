@@ -1961,8 +1961,10 @@ function drawBestiaryPreview(type){
     codexPreview=makeFighter(0,.5,false,type);codexPreviewType=type;codexPreview.preview=true;
   }
   const f=codexPreview, moves=BESTIARY_ATTACKS[type]||['enemy'];
+  const specimenScale=type==='treant'||type==='troll'?1.12:type==='wolfboss'?1.22:1.38, specimenStats=ENEMY_STATS[type];
   const cycle=170, slot=Math.floor(gameT/cycle)%moves.length, move=moves[slot], d=ATK[move]||ATK.enemy;
   const t=Math.floor(gameT%cycle), attackStart=28, attackLength=d.wind+d.active+d.rec;
+  f.x=255;f.z=.42;f.w=specimenStats.w*specimenScale;f.h=specimenStats.h*specimenScale;
   f.face=1;f.hp=f.maxHp;f.flash=0;f.stunned=0;f.guardBreak=0;f.y=0;f.vy=0;f.blocking=false;
   if(t<attackStart || t>attackStart+attackLength){f.state=t<attackStart?'walk':'idle';f.stateT=t<attackStart?t:0;f.atkKind='';f.atkDef=null;}
   else{f.state='attack';f.stateT=t-attackStart;f.atkKind=move;f.atkDef=d;}
@@ -1972,8 +1974,7 @@ function drawBestiaryPreview(type){
   for(let y=164;y<415;y+=25){ctx.beginPath();ctx.moveTo(78,y);ctx.lineTo(432,y);ctx.stroke();}
   ctx.fillStyle='rgba(216,185,106,.08)';ctx.beginPath();ctx.arc(255,272,112,0,7);ctx.fill();
   ctx.strokeStyle='rgba(216,185,106,.4)';ctx.beginPath();ctx.ellipse(255,382,122,24,0,0,7);ctx.stroke();
-  ctx.save();ctx.translate(255,384);ctx.scale(type==='treant'||type==='troll'?1.18:type==='wolfboss'?1.28:1.42);
-  ctx.translate(0,-zToY(.5));drawGroundTelegraph(f);drawFighter(f);ctx.restore();ctx.restore();
+  drawGroundTelegraph(f);drawFighter(f);ctx.restore();
   ctx.strokeStyle='#8f7440';ctx.lineWidth=2;roundRect(78,137,354,278,5);ctx.stroke();
   const phase=t<attackStart?'APPROACH':t<attackStart+d.wind?'TELEGRAPH':t<attackStart+d.wind+d.active?'STRIKE':'RECOVERY';
   return {move,phase,d};
