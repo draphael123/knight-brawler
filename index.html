@@ -25,8 +25,17 @@ const ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
 const SPRITE_SHEETS = {
   knight:Object.assign(new Image(),{src:'assets/sprites/knight-sheet.png'}),
-  grunt:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'})
+  grunt:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
+  shield:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
+  spear:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
+  guard:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
+  archer:Object.assign(new Image(),{src:'assets/sprites/archer-sheet.png'}),
+  xbow:Object.assign(new Image(),{src:'assets/sprites/archer-sheet.png'}),
+  skeleton:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
+  wraith:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
+  blackknight:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'})
 };
+const CHAPTER_VISTAS=Object.assign(new Image(),{src:'assets/environments/chapter-vistas.png'});
 
 // ---- 2.5D world ----
 // x = horizontal screen, z = depth (0 = far/top of floor, 1 = near/bottom).
@@ -908,7 +917,7 @@ function update(){
         for (let i=0;i<6;i++) particles.push({x:p.x, y:zToY(p.z), vx:rand(-2,2), vy:rand(-1,0.5), life:rand(8,14), c:'#7a6a4a', r:rand(2,3.5)}); }
       // dodge roll (Shift) — costs stamina
       else if (pressed('shift')){
-        if (p.stamina>=ROLL_COST){ p.stamina-=ROLL_COST; p.staDelay=40; p.state='dash'; p.stateT=0; p.vx=p.face*9; p.iframe=12; addShake(2); sfx('dodge');
+        if (p.stamina>=ROLL_COST){ p.stamina-=ROLL_COST; p.staDelay=40; p.state='dash'; p.stateT=0; p.vx=p.face*10.5; p.iframe=11; addShake(1); sfx('dodge');
           for (let i=0;i<8;i++) particles.push({x:p.x-p.face*10, y:zToY(p.z), vx:rand(-2,2)-p.face*1.5, vy:rand(-2.5,-0.5), life:rand(10,20), c:'#7a6a4a', r:rand(2,4)}); }
         else floatTexts.push({x:p.x, y:zToY(p.z)-90, t:24, txt:'TIRED', c:'#caa'});
       }
@@ -953,7 +962,7 @@ function update(){
   if (p.comboTimer>0) p.comboTimer--;
   else if (p.state!=='attack'){ p.attackStep=0; p.comboSeq=[]; }
   // dodge afterimages
-  if (p.state==='dash' && p.stateT%2===0){ ghosts.push({x:p.x, z:p.z, y:p.y, face:p.face, s:depthScale(p.z), roll:clamp(p.stateT/12,0,1), life:12, color:p.color}); }
+  if (p.state==='dash' && p.stateT%3===0){ ghosts.push({x:p.x, z:p.z, y:p.y, face:p.face, s:depthScale(p.z), life:10, color:p.color}); }
 
   // ---- ENEMIES ----
   let alive = 0;
@@ -1369,19 +1378,31 @@ function drawGroundTelegraph(f){
   if(urgent){ctx.globalAlpha=0.75+0.25*Math.sin(gameT*0.7);ctx.fillStyle='#fff1c4';ctx.beginPath();ctx.arc(f.x,y,4,0,7);ctx.fill();}
   ctx.restore();
 }
+function drawChapterVista(){
+  if(!CHAPTER_VISTAS.complete||!CHAPTER_VISTAS.naturalWidth)return false;
+  const sw=CHAPTER_VISTAS.naturalWidth/5, sh=CHAPTER_VISTAS.naturalHeight;
+  const sourceX=clamp(levelIdx,0,4)*sw;
+  ctx.drawImage(CHAPTER_VISTAS,sourceX,0,sw,sh,0,0,W,H);
+  // A restrained glaze keeps HUD, silhouettes, and attack warnings legible.
+  ctx.fillStyle='rgba(8,10,16,.13)';ctx.fillRect(0,0,W,H);
+  return true;
+}
 function draw(){
   ctx.save();
   const sx = (Math.random()-0.5)*shake, sy=(Math.random()-0.5)*shake;
   ctx.translate(sx, sy);
 
-  // themed sky / atmosphere
-  const g = ctx.createLinearGradient(0,0,0,FLOOR_TOP+40);
-  g.addColorStop(0,TH.sky[0]); g.addColorStop(0.5,TH.sky[1]); g.addColorStop(1,TH.sky[2]);
-  ctx.fillStyle = g; ctx.fillRect(-20,-20,W+40,FLOOR_TOP+62);
-  drawChapterComposition();
+  const paintedVista=drawChapterVista();
+  // The procedural scenery remains a fallback while the painted atlas loads.
+  if(!paintedVista){
+    const g = ctx.createLinearGradient(0,0,0,FLOOR_TOP+40);
+    g.addColorStop(0,TH.sky[0]); g.addColorStop(0.5,TH.sky[1]); g.addColorStop(1,TH.sky[2]);
+    ctx.fillStyle = g; ctx.fillRect(-20,-20,W+40,FLOOR_TOP+62);
+    drawChapterComposition();
+  }
 
   // distant silhouette (the destination beyond), parallax-scrolled a touch
-  ctx.save(); ctx.translate(-camX*0.18, 0); drawSilhouette(TH.silhouette); ctx.restore();
+  if(!paintedVista){ctx.save(); ctx.translate(-camX*0.18, 0); drawSilhouette(TH.silhouette); ctx.restore();}
 
   // birds / crows gliding across the sky
   for (const b of birds){ b.x += b.vx; if (b.x>W+30) b.x=-30;
@@ -1391,9 +1412,9 @@ function draw(){
   }
 
   // far tree/haze silhouettes (parallax)
-  ctx.save(); ctx.translate(-camX*0.30, 0);
-  for (const t of farTrees){ ctx.globalAlpha=0.5; ctx.fillStyle=t.c; ctx.beginPath(); ctx.arc(t.x,t.y,t.r,0,7); ctx.fill(); }
-  ctx.globalAlpha=1; ctx.restore();
+  if(!paintedVista){ctx.save(); ctx.translate(-camX*0.30, 0);
+    for (const t of farTrees){ ctx.globalAlpha=0.5; ctx.fillStyle=t.c; ctx.beginPath(); ctx.arc(t.x,t.y,t.r,0,7); ctx.fill(); }
+    ctx.globalAlpha=1; ctx.restore();}
 
   // drifting mist band near the horizon
   ctx.globalAlpha=TH.mistA; ctx.fillStyle=TH.mist;
@@ -1403,9 +1424,9 @@ function draw(){
   drawThemeAtmosphere();
 
   // shafts of light
-  ctx.save(); ctx.globalAlpha=TH.shaftA; ctx.fillStyle=TH.shaft;
-  for (let i=0;i<4;i++){ const x=100+i*230; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+50,0); ctx.lineTo(x+210,FLOOR_TOP); ctx.lineTo(x+120,FLOOR_TOP); ctx.closePath(); ctx.fill(); }
-  ctx.restore();
+  if(!paintedVista){ctx.save(); ctx.globalAlpha=TH.shaftA; ctx.fillStyle=TH.shaft;
+    for (let i=0;i<4;i++){ const x=100+i*230; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+50,0); ctx.lineTo(x+210,FLOOR_TOP); ctx.lineTo(x+120,FLOOR_TOP); ctx.closePath(); ctx.fill(); }
+    ctx.restore();}
 
   // ===== WORLD LAYER (everything below scrolls with the camera) =====
   ctx.save(); ctx.translate(-Math.round(camX), 0);
@@ -1413,7 +1434,7 @@ function draw(){
   // ground (spans the whole level width)
   const fg = ctx.createLinearGradient(0,FLOOR_TOP,0,H);
   fg.addColorStop(0,TH.floor[0]); fg.addColorStop(1,TH.floor[1]);
-  ctx.fillStyle = fg; ctx.fillRect(-20,FLOOR_TOP,worldW+40,H-FLOOR_TOP+20);
+  ctx.globalAlpha=paintedVista?0.58:1;ctx.fillStyle = fg; ctx.fillRect(-20,FLOOR_TOP,worldW+40,H-FLOOR_TOP+20);ctx.globalAlpha=1;
   // a river band behind the lane (bridge theme)
   if (TH.water){
     const wg = ctx.createLinearGradient(0,FLOOR_TOP,0,FLOOR_TOP+40);
@@ -1425,8 +1446,9 @@ function draw(){
     ctx.globalAlpha=1;
   }
   // the fighting lane running the length of the level
-  ctx.fillStyle = TH.path;
+  ctx.globalAlpha=paintedVista?0.42:1;ctx.fillStyle = TH.path;
   ctx.beginPath(); ctx.moveTo(-70,FLOOR_TOP+34); ctx.lineTo(worldW+70,FLOOR_TOP+34); ctx.lineTo(worldW+70,H); ctx.lineTo(-70,H); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha=1;
   drawChapterGround();
   drawLevelLandmarks();
   // ground detail: grass tufts & stones, scaled by depth
@@ -1461,7 +1483,7 @@ function draw(){
 
   // dodge afterimages (under fighters)
   for (const gh of ghosts){ ctx.save(); ctx.globalAlpha = 0.32*(gh.life/12);
-    const gy = zToY(gh.z)+gh.y; ctx.translate(gh.x, gy); ctx.rotate(gh.face*gh.roll*Math.PI*2);
+    const gy = zToY(gh.z)+gh.y; ctx.translate(gh.x-gh.face*4, gy); ctx.scale(1.18,.88);
     ctx.fillStyle = gh.color; const w=30*gh.s, h=64*gh.s;
     roundRect(-w*0.4, -h*0.7, w*0.8, h*0.5, 5); ctx.fill();
     ctx.beginPath(); ctx.arc(0,-h*0.78,w*0.26,0,7); ctx.fill(); ctx.restore(); }
@@ -1617,18 +1639,38 @@ function spriteFrameFor(f){
     if(f.stateT<f.atkDef.wind)return 4;
     return 5;
   }
+  if(f.state==='dash')return 3;
   if(f.state==='walk')return 2+(Math.floor(f.stateT/8)%2);
-  return Math.floor(gameT/34)%2;
+  return 0;
 }
 function drawSpriteFighter(f){
   const sheet=SPRITE_SHEETS[f.type];if(!sheet||!sheet.complete||!sheet.naturalWidth)return false;
   const baseY=zToY(f.z),s=depthScale(f.z),frame=spriteFrameFor(f),col=frame%4,row=Math.floor(frame/4);
   const sw=sheet.naturalWidth/4,sh=sheet.naturalHeight/2;
   const dh=f.h*s*(f.isPlayer?1.72:1.62),dw=dh*(sw/sh);
-  const lift=f.y+(f.state==='walk'?-Math.abs(Math.sin(f.stateT*.4))*2*s:0);
+  // The generated cells have uneven transparent padding. Align the visible
+  // boots rather than the cell edge to the floor for stable ground contact.
+  const footSets={
+    knight:[417,422,425,426,373,374,376,387],
+    archer:[399,399,396,396,378,380,373,373],
+    xbow:[399,399,396,396,378,380,373,373],
+    skeleton:[453,454,452,453,406,407,413,407],
+    wraith:[453,454,452,453,406,407,413,407],
+    blackknight:[453,454,452,453,406,407,413,407]
+  };
+  const footBottoms=footSets[f.type]||[404,404,402,402,375,373,374,382];
+  const footBottom=footBottoms[frame]||sh;
+  const groundCorrection=(sh-footBottom)*(dh/sh);
+  const walkBob=f.state==='walk'?-Math.abs(Math.sin(f.stateT*.4))*1.1*s:0;
+  const idleBreath=f.state==='idle'?Math.sin(gameT*.055)*.65*s:0;
+  const lift=f.y+groundCorrection+walkBob+idleBreath;
   ctx.fillStyle='rgba(0,0,0,.38)';ctx.beginPath();ctx.ellipse(f.x,baseY,dw*.29,dw*.09,0,0,7);ctx.fill();
   ctx.save();ctx.translate(f.x,baseY+lift);ctx.scale(f.face,1);
-  if(f.state==='dash'){const p=clamp(f.stateT/12,0,1);ctx.rotate(p*Math.PI*2);ctx.globalAlpha=.86;}
+  if(f.state==='dash'){
+    const p=clamp(f.stateT/11,0,1);
+    ctx.translate(f.face*(4+Math.sin(p*Math.PI)*7)*s,4*s);
+    ctx.rotate(f.face*.075);ctx.scale(1.12,.9);ctx.globalAlpha=.9;
+  }
   if(f.state==='dead')ctx.globalAlpha=clamp(1-(f.deathT-48)/26,0,1);
   if(f.flash>0){ctx.shadowColor='#fff';ctx.shadowBlur=14;}
   ctx.drawImage(sheet,col*sw,row*sh,sw,sh,-dw/2,-dh,dw,dh);
@@ -1724,8 +1766,8 @@ function drawFighter(f){
     ctx.scale(1 - 0.3*Math.abs(Math.sin(prog*Math.PI*2)), 1 + 0.05*Math.abs(Math.sin(prog*Math.PI*2)));
   }
 
-  // dodge roll — tuck and spin a full rotation about the torso
-  if (f.state==='dash'){ const pr=clamp(f.stateT/12,0,1); ctx.translate(0,-h*0.4); ctx.rotate(f.face*pr*Math.PI*2); ctx.translate(0,h*0.4); }
+  // dodge — a low, committed forward lean with no disorienting spin
+  if (f.state==='dash'){ ctx.translate(f.face*7*s,4*s); ctx.rotate(f.face*.09); ctx.scale(1.12,.88); }
 
   // ---- armour palette (metallic shading) ----
   const P = f.pal;
@@ -1976,7 +2018,7 @@ const MOVE_LIST = [
   ['Earthbreaker','K · K','NEW · Slow area slam with heavy knockback.'],
   ['Aerial slash','Space → J','Quick attack while airborne.'],
   ['Diving strike','Space → K','Guard-breaking landing shockwave.'],
-  ['Shield / Dodge','Hold L · Shift','Block with stamina or roll through danger.'],
+  ['Shield / Dodge','Hold L · Shift','Block with stamina or dodge through danger.'],
   ['Pick up / Throw','E near object · E again','Throw props to stun through shields.']
 ];
 const ATTACK_NAMES = {
@@ -2421,7 +2463,7 @@ function drawControls(){
   ctx.fillStyle='#958ba0';ctx.font='10px ui-monospace, monospace';ctx.fillText('YOUR FIELD MANUAL',W/2,70);
   ctx.textAlign='left';ctx.fillStyle='#d8b96a';ctx.font='bold 13px Georgia, serif';ctx.fillText('MOVEMENT',125,112);ctx.fillText('COMBAT',470,112);
   controlRow(125,145,'A / D','Move left / right');controlRow(125,181,'W / S','Move up / down');
-  controlRow(125,217,'SPACE','Jump');controlRow(125,253,'SHIFT','Dodge roll');
+  controlRow(125,217,'SPACE','Jump');controlRow(125,253,'SHIFT','Dodge');
   controlRow(125,289,'ESC','Pause / resume');controlRow(125,325,'M','Open Knight’s Codex');
   controlRow(470,145,'J','Light attack / chain');controlRow(470,181,'K','Heavy attack');
   controlRow(470,217,'L','Hold shield');controlRow(470,253,'E','Interact / throw item');
@@ -2547,7 +2589,7 @@ const AUDIO = (function(){
       case 'guardbreak':noise(t,0.34,0.48,'highpass',2200); glide(460*vary,95,t,0.34,'sawtooth',0.18); tone(90,t+0.04,0.30,'sine',0.20); break;
       case 'slain':     glide(420,70,t,0.34,'sawtooth',0.20); noise(t,0.18,0.35,'lowpass',1000); break;
       case 'jump':      glide(280,620,t,0.14,'triangle',0.14); break;
-      case 'dodge':     noise(t,0.18,0.25,'bandpass',1600); break;
+      case 'dodge':     noise(t,0.16,0.22,'bandpass',1450); glide(340,190,t,0.13,'triangle',0.07); break;
       case 'throw':     glide(600,200,t,0.18,'triangle',0.12); noise(t,0.10,0.2,'bandpass',1400); break;
       case 'arrow':     noise(t,0.06,0.20,'highpass',3200); glide(1500*vary,470,t+0.015,0.15,'sawtooth',0.10); break;
       case 'warn_melee':tone(420,t,0.09,'square',0.11); break;
@@ -2586,6 +2628,15 @@ const AUDIO = (function(){
       const boss=!!bossActive, b=musicProfile.bass[nextStep], l=musicProfile.lead[nextStep];
       if(b) tone(b*(boss?1.059:1),stepClock,musicProfile.step*1.8,musicProfile.bassWave,boss?0.18:0.14,mGain);
       if(l) tone(l*(boss?1.122:1),stepClock,musicProfile.step*0.9,musicProfile.leadWave,boss?0.085:0.055,mGain);
+      // Sustained string triads and restrained brass turn the procedural score
+      // into an original, royalty-free orchestral-fantasy layer.
+      if(nextStep%4===0){
+        const root=b||musicProfile.bass.find(Boolean)||82;
+        const minor=levelIdx===1||levelIdx===3, third=minor?1.2:1.25;
+        [1,third,1.5].forEach((ratio,i)=>tone(root*2*ratio,stepClock,musicProfile.step*4.4,'triangle',(boss?0.026:0.018)-(i*.002),mGain));
+        tone(root,stepClock,musicProfile.step*3.5,'sine',boss?0.07:0.045,mGain);
+        if(boss){tone(root*3,stepClock,musicProfile.step*1.7,'sawtooth',.026,mGain);tone(root*4.5,stepClock+.025,musicProfile.step*1.3,'triangle',.018,mGain);}
+      }
       if(musicProfile.drum.includes(nextStep)){
         noise(stepClock,0.055,boss?0.12:0.07,'lowpass',boss?520:420,mGain);
         if(nextStep%4===0) tone(boss?72:62,stepClock,0.10,'sine',boss?0.12:0.075,mGain);
