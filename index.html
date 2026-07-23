@@ -1449,19 +1449,17 @@ function draw(){
   ctx.globalAlpha=paintedVista?0.42:1;ctx.fillStyle = TH.path;
   ctx.beginPath(); ctx.moveTo(-70,FLOOR_TOP+34); ctx.lineTo(worldW+70,FLOOR_TOP+34); ctx.lineTo(worldW+70,H); ctx.lineTo(-70,H); ctx.closePath(); ctx.fill();
   ctx.globalAlpha=1;
-  drawChapterGround();
-  drawLevelLandmarks();
-  // ground detail: grass tufts & stones, scaled by depth
-  for (const t of tufts){ const y=zToY(t.z), s=depthScale(t.z);
-    if (t.grass){ ctx.strokeStyle=t.c; ctx.lineWidth=1.5*s; ctx.beginPath();
-      ctx.moveTo(t.x,y); ctx.lineTo(t.x-3*s,y-7*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x,y-9*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x+3*s,y-7*s); ctx.stroke(); }
-    else { ctx.fillStyle=t.c; ctx.beginPath(); ctx.ellipse(t.x,y,4*s,2.4*s,0,0,7); ctx.fill(); } }
-
-  // mid-ground trees framing the lane (behind fighters)
-  for (const t of midTrees) drawTree(t);
-
-  // ground decorations (bushes, rocks, mushrooms, log)
-  for (const d of decos) drawDeco(d);
+  if(!paintedVista){
+    drawChapterGround();
+    drawLevelLandmarks();
+    // ground detail: grass tufts & stones, scaled by depth
+    for (const t of tufts){ const y=zToY(t.z), s=depthScale(t.z);
+      if (t.grass){ ctx.strokeStyle=t.c; ctx.lineWidth=1.5*s; ctx.beginPath();
+        ctx.moveTo(t.x,y); ctx.lineTo(t.x-3*s,y-7*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x,y-9*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x+3*s,y-7*s); ctx.stroke(); }
+      else { ctx.fillStyle=t.c; ctx.beginPath(); ctx.ellipse(t.x,y,4*s,2.4*s,0,0,7); ctx.fill(); } }
+    for (const t of midTrees) drawTree(t);
+    for (const d of decos) drawDeco(d);
+  }
 
   // floating motes — fireflies / spores / rising embers (themed)
   for (const ff of fireflies){
