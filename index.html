@@ -23,6 +23,10 @@
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
+const SPRITE_SHEETS = {
+  knight:Object.assign(new Image(),{src:'assets/sprites/knight-sheet.png'}),
+  grunt:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'})
+};
 
 // ---- 2.5D world ----
 // x = horizontal screen, z = depth (0 = far/top of floor, 1 = near/bottom).
@@ -1606,12 +1610,45 @@ function drawCharacterDetails(f,w,h,s,dark,lite,trim,flashing){
   if(f.type==='blackknight'){ctx.fillStyle=flashing?'#fff':'#121015';for(const side of[-1,1]){ctx.beginPath();ctx.moveTo(side*w*.28,-h*.9);ctx.lineTo(side*w*.5,-h*1.06);ctx.lineTo(side*w*.42,-h*.76);ctx.fill();}}
 }
 
+function spriteFrameFor(f){
+  if(f.state==='dead'||f.state==='downed')return 7;
+  if(f.state==='hurt'||f.state==='launched')return 6;
+  if(f.state==='attack'&&f.atkDef){
+    if(f.stateT<f.atkDef.wind)return 4;
+    return 5;
+  }
+  if(f.state==='walk')return 2+(Math.floor(f.stateT/8)%2);
+  return Math.floor(gameT/34)%2;
+}
+function drawSpriteFighter(f){
+  const sheet=SPRITE_SHEETS[f.type];if(!sheet||!sheet.complete||!sheet.naturalWidth)return false;
+  const baseY=zToY(f.z),s=depthScale(f.z),frame=spriteFrameFor(f),col=frame%4,row=Math.floor(frame/4);
+  const sw=sheet.naturalWidth/4,sh=sheet.naturalHeight/2;
+  const dh=f.h*s*(f.isPlayer?1.72:1.62),dw=dh*(sw/sh);
+  const lift=f.y+(f.state==='walk'?-Math.abs(Math.sin(f.stateT*.4))*2*s:0);
+  ctx.fillStyle='rgba(0,0,0,.38)';ctx.beginPath();ctx.ellipse(f.x,baseY,dw*.29,dw*.09,0,0,7);ctx.fill();
+  ctx.save();ctx.translate(f.x,baseY+lift);ctx.scale(f.face,1);
+  if(f.state==='dash'){const p=clamp(f.stateT/12,0,1);ctx.rotate(p*Math.PI*2);ctx.globalAlpha=.86;}
+  if(f.state==='dead')ctx.globalAlpha=clamp(1-(f.deathT-48)/26,0,1);
+  if(f.flash>0){ctx.shadowColor='#fff';ctx.shadowBlur=14;}
+  ctx.drawImage(sheet,col*sw,row*sh,sw,sh,-dw/2,-dh,dw,dh);
+  if(f.state==='attack'&&f.atkDef&&f.stateT>=f.atkDef.wind&&f.stateT<f.atkDef.wind+f.atkDef.active+4){
+    const p=clamp((f.stateT-f.atkDef.wind)/Math.max(1,f.atkDef.active),0,1);
+    ctx.strokeStyle=f.isPlayer?'rgba(226,242,255,.84)':'rgba(255,190,145,.7)';
+    ctx.lineWidth=(f.atkDef.guardbreak?6:4)*s;ctx.beginPath();ctx.arc(dw*.18,-dh*.55,dw*.58,-1.05+p*.65,.65+p*.65);ctx.stroke();
+  }
+  ctx.restore();
+  drawAttackIntent(f,f.x,baseY-dh-8,s);drawEnemyReadout(f,f.x,baseY-dh-8,s);
+  return true;
+}
+
 function drawFighter(f){
   // non-humanoid creatures have their own renderers
   if (f.body==='wolf'){ drawWolf(f); return; }
   if (f.body==='boar'){ drawBoar(f); return; }
   if (f.body==='treant'){ drawTreant(f); return; }
   if (f.body==='troll'){ drawTroll(f); return; }
+  if (drawSpriteFighter(f)) return;
 
   const baseY = zToY(f.z);
   const s = depthScale(f.z);
