@@ -641,6 +641,11 @@ const ATK = {
   bolt:     { wind:34, active:1, rec:30, reach:0, dmg:0, shoot:true, bolt:true, tele:true },         // crossbow
   summon:   { wind:40, active:1, rec:44, reach:0, dmg:0, summon:true, tele:true },                   // cultist raises a skeleton
   cast:     { wind:30, active:1, rec:34, reach:0, dmg:0, fireball:true, tele:true },                 // battlemage fireball
+  bite:     { wind:10, active:5, rec:18, reach:42, dmg:7, knock:4, launch:0, tele:true },           // wolf close bite
+  gore:     { wind:15, active:7, rec:24, reach:48, dmg:10, knock:7, launch:0, tele:true },          // boar close tusk attack
+  sweep:    { wind:28, active:9, rec:30, reach:74, dmg:8, knock:10, launch:0, sweep:true, tele:true },// spearman wide sweep
+  stockbash:{ wind:16, active:5, rec:24, reach:42, dmg:7, knock:8, launch:0, bash:true, tele:true }, // crossbow/archer melee
+  staffburst:{wind:22, active:7, rec:28, reach:62, dmg:9, knock:9, launch:0, aoe:true, tele:true },  // battlemage close burst
   // boss moves
   bslam:    { wind:32, active:8, rec:36, reach:84, dmg:18, knock:11, launch:-7, aoe:true, guardbreak:true, slam:true, tele:true },
   bcharge:  { wind:24, active:18, rec:32, reach:58, dmg:14, knock:12, launch:0, guardbreak:true, charge:true, chargeSpd:7, tele:true },
@@ -1088,6 +1093,9 @@ function enemyAI(e){
   if (e.type==='archer' || e.type==='xbow'){
     const slow = e.type==='xbow';
     const range = (slow?300:270) + (e._gap||(e._gap=rand(-50,60)));
+    if(e.atkCD<=0 && Math.abs(dz)<0.14 && dist<74){
+      e.aiCommitted=true;startAttack(e,slow?'stockbash':'jab');e.atkCD=rand(80,125);return;
+    }
     if (e.shootCD<=0 && Math.abs(dz)<0.12 && dist>120 && dist<(slow?540:430)){
       e.aiCommitted = true; startAttack(e, slow?'bolt':'shoot'); e.shootCD = slow?rand(210,300):rand(150,230); return;
     }
@@ -1096,6 +1104,9 @@ function enemyAI(e){
 
   // ---- BATTLEMAGE: hurl fireballs at range, blink away when crowded ----
   if (e.type==='mage'){
+    if(dist<82 && Math.abs(dz)<0.15 && e.atkCD<=0){
+      e.aiCommitted=true;startAttack(e,'staffburst');e.atkCD=rand(85,130);return;
+    }
     if (dist<115 && e.atkCD<=0){                          // teleport to safety
       const [lo,hi]=arenaBounds(); e.x = clamp(e.x - e.face*rand(160,230), lo+20, hi-20);
       e.atkCD = rand(50,90); spawnRing(e.x, zToY(e.z)-40, '#caa0ff', 32);
@@ -1108,13 +1119,17 @@ function enemyAI(e){
 
   // ---- CULTIST: hang back and raise skeletons ----
   if (e.type==='cultist'){
-    if (e.shootCD<=0 && dist>120 && dist<560){ e.aiCommitted=true; startAttack(e,'summon'); e.shootCD=rand(220,320); return; }
+    if(e.atkCD<=0 && Math.abs(dz)<0.15 && dist<72){e.aiCommitted=true;startAttack(e,'staffburst');e.atkCD=rand(100,145);return;}
+    if (e.shootCD<=0 && dist>120 && dist<560){
+      e.aiCommitted=true;startAttack(e,Math.random()<0.58?'summon':'soulbolt');e.shootCD=rand(190,300);return;
+    }
     moveRange(e, dx, dz, 320, 1.4); return;
   }
 
   // ---- WOLF: fast, pounces when lined up at mid range ----
   if (e.type==='wolf'){
     const lined = Math.abs(dz)<0.13;
+    if(e.atkCD<=0 && lined && dist<=60){startAttack(e,'bite');e.atkCD=rand(55,90);e.aiCommitted=true;return;}
     if (e.atkCD<=0 && lined && dist>60 && dist<240){ startAttack(e,'wlunge'); e.atkCD=rand(70,120); e.aiCommitted=true; return; }
     let mvx=0,mvz=0; if (dist>48) mvx=Math.sign(dx); if (Math.abs(dz)>0.04) mvz=Math.sign(dz);
     e.vx=mvx*2.6; e.vz=mvz*0.016; e.state=(mvx||mvz)?'walk':'idle'; e.aiCommitted=false; return;
@@ -1123,6 +1138,7 @@ function enemyAI(e){
   // ---- BOAR: charges in a straight line from range ----
   if (e.type==='boar'){
     const lined = Math.abs(dz)<0.15;
+    if(e.atkCD<=0 && lined && dist<=90){startAttack(e,'gore');e.atkCD=rand(75,115);e.aiCommitted=true;return;}
     if (e.atkCD<=0 && lined && dist>90 && dist<430){ startAttack(e,'bcharge2'); e.atkCD=rand(110,160); e.aiCommitted=true; return; }
     let mvx=0,mvz=0; if (dist>60) mvx=Math.sign(dx); if (Math.abs(dz)>0.05) mvz=Math.sign(dz);
     e.vx=mvx*1.4; e.vz=mvz*0.012; e.state=(mvx||mvz)?'walk':'idle'; e.aiCommitted=false; return;
@@ -1140,9 +1156,9 @@ function enemyAI(e){
   const committed = enemies.filter(o=>o!==e && (o.state==='attack' || o.aiCommitted)).length;
   const cfg = ({
     grunt:    {reach:60, atk:'enemy',  spd:1.5, gap:46},
-    spear:    {reach:92, atk:'thrust', spd:1.4, gap:80},
-    skeleton: {reach:58, atk:'enemy',  spd:1.5, gap:44},
-    shield:   {reach:64, atk:'sbash',  spd:1.3, gap:46},
+    spear:    {reach:92, atk:(Math.random()<0.58?'thrust':'sweep'), spd:1.4, gap:80},
+    skeleton: {reach:58, atk:(Math.random()<0.6?'enemy':'jab'), spd:1.5, gap:44},
+    shield:   {reach:64, atk:(Math.random()<0.5?'enemy':'sbash'), spd:1.3, gap:46},
     guard:    {reach:90, atk:(Math.random()<0.5?'thrust':'sbash'), spd:1.2, gap:64},
   })[e.type] || {reach:60, atk:'enemy', spd:1.5, gap:46};
   const wantsAttack = dist < cfg.reach && Math.abs(dz) < 0.14;
@@ -1898,16 +1914,16 @@ const ENEMY_NAMES = {
 };
 const BESTIARY_INFO = {
   grunt:{speed:'Medium',moves:'Sword swing · quick follow-up',note:'Basic melee fighter. Dangerous in groups.'},
-  archer:{speed:'Medium',moves:'Arrow · fire arrow',note:'Keeps its distance. Step out of the firing lane.'},
+  archer:{speed:'Medium',moves:'Arrow · quick knife strike',note:'Keeps its distance, but counters when cornered.'},
   shield:{speed:'Slow',moves:'Sword swing · shield bash · block',note:'Break its guard with heavy attacks or thrown objects.'},
   wolf:{speed:'Fast',moves:'Pounce · bite',note:'Lines up a fast mid-range leap.'},
-  boar:{speed:'Slow',moves:'Long charge',note:'A straight-line bruiser with heavy knockback.'},
-  spear:{speed:'Medium',moves:'Long spear thrust',note:'Controls more space than a swordsman.'},
-  xbow:{speed:'Slow',moves:'Heavy bolt',note:'A slow shot with high damage and knockback.'},
-  skeleton:{speed:'Medium',moves:'Sword swing · reassemble',note:'Collapses once, then returns at half health.'},
-  cultist:{speed:'Slow',moves:'Summon skeleton',note:'A support foe. Stop its long ritual first.'},
+  boar:{speed:'Slow',moves:'Long charge · tusk gore',note:'Charges from range and gores at close quarters.'},
+  spear:{speed:'Medium',moves:'Long spear thrust · wide sweep',note:'Alternates precise reach with broad lane control.'},
+  xbow:{speed:'Slow',moves:'Heavy bolt · stock bash',note:'A dangerous shot backed by a close defensive strike.'},
+  skeleton:{speed:'Medium',moves:'Sword swing · quick stab · reassemble',note:'Varies its sword timing and returns once after collapsing.'},
+  cultist:{speed:'Slow',moves:'Summon skeleton · soul bolt · staff burst',note:'A support foe with ranged magic and a close panic attack.'},
   guard:{speed:'Slow',moves:'Spear thrust · shield bash · block',note:'Armored defender with strong stamina.'},
-  mage:{speed:'Medium',moves:'Fireball · blink',note:'Teleports away when crowded.'},
+  mage:{speed:'Medium',moves:'Fireball · arcane burst · blink',note:'Blasts nearby attackers before teleporting to safety.'},
   wolfboss:{speed:'Very fast',moves:'Pounce · howl · summon wolves',note:'Becomes more aggressive after losing health.'},
   treant:{speed:'Very slow',moves:'Root slam · vine sweep',note:'Huge reach and area control.'},
   troll:{speed:'Slow',moves:'Club slam · throw boulder',note:'Heavy hits with long recovery windows.'},
@@ -1928,16 +1944,17 @@ const MOVE_LIST = [
 ];
 const ATTACK_NAMES = {
   enemy:'SWING', sbash:'SHIELD BASH', shoot:'ARROW', jab:'QUICK STRIKE',
-  wlunge:'POUNCE', bcharge2:'CHARGE', thrust:'SPEAR THRUST', bolt:'HEAVY BOLT',
+  wlunge:'POUNCE', bite:'BITE', bcharge2:'CHARGE', gore:'TUSK GORE', thrust:'SPEAR THRUST', sweep:'SPEAR SWEEP', bolt:'HEAVY BOLT',
+  stockbash:'STOCK BASH', staffburst:'ARCANE BURST',
   summon:'SUMMONING', cast:'FIREBALL', bslam:'GROUND SLAM', bcharge:'CHARGE',
   pounce:'POUNCE', howl:'CALLING WOLVES', tslam:'ROOT SLAM', tsweep:'VINE SWEEP',
   club:'CLUB SLAM', boulder:'BOULDER', wslash:'WRAITH SLASH', soulbolt:'SOUL BOLT',
   bkcombo:'BLADE COMBO', bkslam:'FLAME SLAM'
 };
 const BESTIARY_ATTACKS = {
-  grunt:['enemy','jab'], archer:['shoot'], shield:['enemy','sbash'], wolf:['wlunge'],
-  boar:['bcharge2'], spear:['thrust'], xbow:['bolt'], skeleton:['enemy'],
-  cultist:['summon'], guard:['thrust','sbash'], mage:['cast'],
+  grunt:['enemy','jab'], archer:['shoot','jab'], shield:['enemy','sbash'], wolf:['wlunge','bite'],
+  boar:['bcharge2','gore'], spear:['thrust','sweep'], xbow:['bolt','stockbash'], skeleton:['enemy','jab'],
+  cultist:['summon','soulbolt','staffburst'], guard:['thrust','sbash'], mage:['cast','staffburst'],
   wolfboss:['pounce','howl'], treant:['tslam','tsweep'], troll:['club','boulder'],
   wraith:['wslash','soulbolt','summon'], blackknight:['bkcombo','bkslam','bcharge']
 };
