@@ -734,24 +734,19 @@ function spawnItems(n){
 function grabbableEnemy(p){
   let best=null,bd=1e9;
   for(const e of enemies){
-    if(e.hp<=0||e.boss||e.grabbedBy||e.state==='dead'||e.state==='downed')continue;
+    if(e.hp<=0||e.boss||e.throwImmune>0||e.state==='dead'||e.state==='downed'||e.state==='wallthrown')continue;
     const vulnerable=e.state==='hurt'||e.stunned>0||e.guardBreak>0||e.hp<=e.maxHp*.35;
     const d=Math.abs(e.x-p.x)+Math.abs(e.z-p.z)*150;
     if(vulnerable&&d<bd&&Math.abs(e.x-p.x)<46&&Math.abs(e.z-p.z)<.16){best=e;bd=d;}
   }
   return best;
 }
-function grabEnemy(p,e){
-  p.grabbedEnemy=e;e.grabbedBy=p;e.wallThrown=false;e.state='grabbed';e.stateT=0;
-  e.vx=0;e.vz=0;e.blocking=false;e.iframe=10;p.vx=0;
-  floatTexts.push({x:e.x,y:zToY(e.z)-88,t:28,txt:'GRABBED',c:'#f0cd65'});sfx('grab');
-}
-function throwGrabbedEnemy(p){
-  const e=p.grabbedEnemy;if(!e)return;
-  p.grabbedEnemy=null;e.grabbedBy=null;e.wallThrown=true;e.state='wallthrown';e.stateT=0;
-  e.face=-p.face;e.x=p.x+p.face*28;e.z=p.z;e.y=-18;e.vy=-2.8;e.vx=p.face*13.5;e.iframe=4;
+function contextualThrow(p,e){
+  e.grabbedBy=null;e.wallThrown=true;e.throwSource=p;e.state='wallthrown';e.stateT=0;
+  e.face=-p.face;e.x=p.x+p.face*30;e.z=p.z;e.y=-16;e.vy=-2.5;e.vx=p.face*13.5;e.iframe=4;
+  e.blocking=false;p.vx=0;p.state='idle';
   addShake(4);freeze(3);sfx('throw');
-  floatTexts.push({x:e.x,y:zToY(e.z)-94,t:28,txt:'WALL THROW',c:'#ffe09a'});
+  floatTexts.push({x:e.x,y:zToY(e.z)-94,t:28,txt:'THROW!',c:'#ffe09a'});
 }
 function dropGrabbedEnemy(p){
   const e=p.grabbedEnemy;if(!e)return;
@@ -781,7 +776,7 @@ const ATK = {
   enemy:    { wind:26, active:5, rec:30, reach:54, dmg:8, knock:4.5, launch:0, tele:true },        // basic foe swing
   sbash:    { wind:20, active:5, rec:26, reach:46, dmg:9, knock:9, launch:0, bash:true, tele:true },// shield lunge
   shoot:    { wind:26, active:1, rec:26, reach:0, dmg:0, shoot:true, tele:true },                    // archer looses
-  jab:      { wind:8, active:4, rec:14, reach:50, dmg:5, knock:3, launch:0 },                       // grunt follow-up
+  jab:      { wind:11, active:4, rec:14, reach:50, dmg:5, knock:3, launch:0, tele:true },           // readable grunt follow-up
   // new regular enemies
   wlunge:   { wind:28, active:8, rec:32, reach:48, dmg:9, knock:7, launch:0, charge:true, chargeSpd:9, tele:true },   // wolf pounce
   bcharge2: { wind:26, active:22, rec:34, reach:54, dmg:12, knock:12, launch:0, charge:true, chargeSpd:9, guardbreak:true, tele:true }, // boar
@@ -790,7 +785,7 @@ const ATK = {
   summon:   { wind:40, active:1, rec:44, reach:0, dmg:0, summon:true, tele:true },                   // cultist raises a skeleton
   cast:     { wind:30, active:1, rec:34, reach:0, dmg:0, fireball:true, tele:true },                 // battlemage fireball
   bite:     { wind:18, active:4, rec:24, reach:40, dmg:7, knock:4, launch:0, tele:true },           // wolf close bite
-  gore:     { wind:15, active:7, rec:24, reach:48, dmg:10, knock:7, launch:0, tele:true },          // boar close tusk attack
+  gore:     { wind:17, active:7, rec:24, reach:48, dmg:10, knock:7, launch:0, tele:true },          // boar close tusk attack
   sweep:    { wind:28, active:9, rec:30, reach:74, dmg:8, knock:10, launch:0, sweep:true, tele:true },// spearman wide sweep
   stockbash:{ wind:16, active:5, rec:24, reach:42, dmg:7, knock:8, launch:0, bash:true, tele:true }, // crossbow/archer melee
   staffburst:{wind:22, active:7, rec:28, reach:62, dmg:9, knock:9, launch:0, aoe:true, tele:true },  // battlemage close burst
@@ -805,7 +800,7 @@ const ATK = {
   boulder:  { wind:36, active:1, rec:40, reach:0, dmg:0, boulder:true, tele:true },                 // troll throw
   wslash:   { wind:18, active:6, rec:24, reach:60, dmg:12, knock:8, launch:0, tele:true },          // wraith
   soulbolt: { wind:26, active:1, rec:30, reach:0, dmg:0, soul:true, tele:true },                    // wraith projectile
-  bkcombo:  { wind:11, active:6, rec:14, reach:58, dmg:11, knock:5, launch:0, tele:true },          // black knight chain
+  bkcombo:  { wind:14, active:6, rec:14, reach:58, dmg:11, knock:5, launch:0, tele:true },          // black knight chain
   bkslam:   { wind:24, active:8, rec:30, reach:80, dmg:16, knock:11, launch:-6, aoe:true, guardbreak:true, slam:true, fire:true, tele:true },
 };
 const SHOOT = ATK.shoot;
@@ -1067,17 +1062,16 @@ function update(){
       p.vx = moving.x * spd; p.vz = moving.z * 0.018;
       p.state = (moving.x||moving.z) ? 'walk':'idle';
 
-      // grab / throw (E) — pick up a ground item, then hurl it to stun a foe
+      // Contextual throw (E): a vulnerable foe is hurled immediately. Ground
+      // props can still be picked up and thrown on a second press.
       if (pressed('e')){
-        if(p.grabbedEnemy){
-          throwGrabbedEnemy(p);
-        } else if (p.holding){
+        if (p.holding){
           const it = p.holding; it.held=false; it.thrown=true;
           it.vx = p.face*11; it.vy = -3.5; it.y = -42; p.holding=null;
           addShake(2); sfx('throw'); floatTexts.push({x:p.x, y:zToY(p.z)-100, t:20, txt:'THROW', c:'#ffe066'});
         } else {
           const foe=grabbableEnemy(p);
-          if(foe)grabEnemy(p,foe);
+          if(foe)contextualThrow(p,foe);
           else{
             let best=null, bd=1e9;
             for (const it of items){ if (it.held||it.thrown||it.dead) continue;
@@ -1089,22 +1083,22 @@ function update(){
       }
 
       // shield (hold L) — drains stamina; empty bar = guard break, can't block while broken
-      if (!p.grabbedEnemy && keys['l'] && p.guardBreak<=0 && p.stamina>0){
+      if (keys['l'] && p.guardBreak<=0 && p.stamina>0){
         p.state='block'; p.blocking=true; p.vx=0; p.vz=0;
         p.stamina -= BLOCK_DRAIN; p.staDelay = 30;
         if (p.stamina<=0){ p.stamina=0; guardBreak(p, {x:p.x-p.face*40, face:p.face}); }
       }
       // jump (Space)
-      else if (!p.grabbedEnemy && pressed(' ')){ p.vy=-12; p.y=-0.01; p.state='jump'; p.stateT=0; sfx('jump');
+      else if (pressed(' ')){ p.vy=-12; p.y=-0.01; p.state='jump'; p.stateT=0; sfx('jump');
         for (let i=0;i<6;i++) particles.push({x:p.x, y:zToY(p.z), vx:rand(-2,2), vy:rand(-1,0.5), life:rand(8,14), c:'#7a6a4a', r:rand(2,3.5)}); }
       // dodge roll (Shift) — costs stamina
-      else if (!p.grabbedEnemy && pressed('shift')) startDodge(p);
+      else if (pressed('shift')) startDodge(p);
       // attacks + combo recognition
-      else if (!p.grabbedEnemy && pressed('j')){
+      else if (pressed('j')){
         p.comboSeq = (p.comboTimer>0) ? [...p.comboSeq,'j'] : ['j'];
         p.attackStep = (p.comboTimer>0) ? (p.attackStep+1)%LIGHT.length : 0;
         startAttack(p,'light');
-      } else if (!p.grabbedEnemy && pressed('k')){
+      } else if (pressed('k')){
         p.comboSeq = (p.comboTimer>0) ? [...p.comboSeq,'k'] : ['k'];
         const seq = p.comboSeq.join('');
         if (seq.endsWith('jjjk')){                          // full light chain → whirlwind crowd-clear
@@ -1452,14 +1446,31 @@ function bossAI(e, dx, dz, dist){
 
 function wallImpact(f,p,dir){
   const dmg=f.boss?8:20;
+  const source=f.throwSource||player;
   f.wallThrown=false;f.grabbedBy=null;f.hp-=dmg;f.y=0;f.vy=0;
   f.vx=-dir*(f.boss?3:6);f.state='hurt';f.stateT=0;f.hitstun=f.boss?28:72;
-  f.flash=10;f.iframe=10;p.hits=(p.hits||0)+1;p.cracked=true;
+  f.flash=10;f.iframe=10;f.throwImmune=90;p.cracked=true;
+  source.hits=(source.hits||0)+1;
   addShake(11);freeze(11);screenFlash=Math.max(screenFlash,.38);sfx('wallhit');
   spawnRing(f.x,zToY(f.z)-42,'#ffc36a',56);
   for(let i=0;i<20;i++)particles.push({x:p.x,y:zToY(p.z)-rand(18,78),vx:rand(-6,6),vy:rand(-7,-1),life:rand(14,28),c:i%2?'#8b8175':'#c5ad79',r:rand(2,5)});
   floatTexts.push({x:f.x,y:zToY(f.z)-104,t:42,txt:'WALL IMPACT  '+dmg,c:'#ffc36a'});
-  if(f.hp<=0)killFighter(f,null);
+  if(f.hp<=0)killFighter(f,source);
+}
+function resolveThrownEnemyCollision(f){
+  if(!f.wallThrown)return;
+  for(const e of enemies){
+    if(e===f||e.hp<=0||e.state==='dead'||e.state==='downed'||e.iframe>0)continue;
+    if(Math.abs(e.x-f.x)>42||Math.abs(e.z-f.z)>.15)continue;
+    const dir=Math.sign(f.vx||1),source=f.throwSource||player;
+    e.hp-=14;e.state='hurt';e.stateT=0;e.hitstun=42;e.vx=dir*8;e.flash=9;e.iframe=10;
+    f.hp-=6;f.wallThrown=false;f.state='hurt';f.stateT=0;f.hitstun=34;f.vx=-dir*3;f.throwImmune=90;
+    source.hits=(source.hits||0)+1;addShake(9);freeze(8);screenFlash=Math.max(screenFlash,.3);sfx('wallhit');
+    spawnRing((e.x+f.x)/2,zToY(e.z)-35,'#ffe09a',48);
+    floatTexts.push({x:e.x,y:zToY(e.z)-100,t:38,txt:'COLLISION  14',c:'#ffe09a'});
+    if(e.hp<=0)killFighter(e,source);if(f.hp<=0)killFighter(f,source);
+    return;
+  }
 }
 function resolveCombatPropCollision(f,oldX){
   if(f.state==='dead'||f.state==='downed'||f.state==='grabbed')return;
@@ -1488,6 +1499,7 @@ function updateFighter(f){
   if (f.stunReset>0) f.stunReset--; else f.stunHits=0;
   if (f.comboArmor>0) f.comboArmor--;
   if (f.exposed>0) f.exposed--;
+  if (f.throwImmune>0) f.throwImmune--;
 
   if(f.state==='grabbed'&&f.grabbedBy){
     const p=f.grabbedBy;f.x=p.x+p.face*20;f.z=p.z;f.y=-12;f.face=-p.face;f.vx=0;f.vz=0;
@@ -1514,7 +1526,7 @@ function updateFighter(f){
   if (f.state==='attack'){
     const d = f.atkDef;
     const total = d.wind + d.active + d.rec;
-    if(!f.isPlayer && d.tele && f.stateT===Math.max(1,Math.floor(d.wind*0.72))) sfx('warn_ready');
+    if(!f.isPlayer && d.tele && f.stateT===Math.max(1,Math.floor(d.wind*0.72))) sfx('warn_commit_'+attackTelegraphType(d));
     if (d.shoot || d.fireball || d.soul || d.boulder || d.summon || d.howl){
       // ranged / special effects fire once when the windup completes
       if (f.stateT===d.wind){
@@ -1555,7 +1567,7 @@ function updateFighter(f){
 
   // timed states
   if (f.state==='hurt'){ if (f.hitstun>0) f.hitstun--; else if (f.y>=0) f.state='idle'; }
-  if (f.state==='wallthrown'&&f.y>=0){f.wallThrown=false;f.state='hurt';f.stateT=0;f.hitstun=36;f.vx*=.45;}
+  if (f.state==='wallthrown'&&f.y>=0){f.wallThrown=false;f.state='hurt';f.stateT=0;f.hitstun=36;f.vx*=.45;f.throwImmune=90;}
   if (f.state==='dash'){ if (f.stateT>10) f.state='idle'; }
   if (f.state==='block'){ /* held externally */ }
   if (f.state==='dead'){ f.vx*=0.9; f.deathT++; }
@@ -1585,6 +1597,7 @@ function updateFighter(f){
   const [axlo,axhi] = arenaBounds();
   f.x = clamp(f.x, axlo, axhi);
   f.z = clamp(f.z, 0.05, 1.0);
+  resolveThrownEnemyCollision(f);
   resolveCombatPropCollision(f,oldX);
   if(f.state==='walk'&&f.stateT%14===0&&(Math.abs(f.vx)>.2||Math.abs(f.vz)>.002)){
     particles.push({x:f.x-f.face*5,y:zToY(f.z)-1,vx:-f.face*rand(.2,1),vy:rand(-.8,-.2),life:rand(7,12),c:TH.path,r:rand(1.5,2.5)});
@@ -1598,13 +1611,14 @@ function attackTelegraphType(d){
   if(d.aoe||d.slam) return 'area';
   return 'melee';
 }
-function drawGroundTelegraph(f){
+const TELEGRAPH_COLORS={melee:'235,62,55',lane:'255,183,54',area:'255,112,45',magic:'167,105,235'};
+function drawGroundTelegraph(f,overlay=false){
   if(f.isPlayer||f.hp<=0||f.state!=='attack'||!f.atkDef||!f.atkDef.tele||f.stateT>=f.atkDef.wind)return;
   const d=f.atkDef, type=attackTelegraphType(d), p=clamp(f.stateT/d.wind,0,1);
-  const urgent=p>0.72, alpha=0.16+0.30*p, y=zToY(f.z)+2, reach=Math.max(48,d.reach||0);
-  const col=type==='magic'?'151,105,220':type==='area'?'255,142,58':'235,62,55';
-  ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle='rgba('+col+',0.55)';ctx.strokeStyle='rgba('+col+',0.95)';
-  ctx.lineWidth=urgent?3:2; if(urgent&&Math.floor(gameT/3)%2===0)ctx.strokeStyle='#fff1c4';
+  const urgent=p>0.72, commit=p>0.90, alpha=overlay?0.72:0.16+0.30*p, y=zToY(f.z)+2, reach=Math.max(48,d.reach||0);
+  const col=TELEGRAPH_COLORS[type];
+  ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=overlay?'rgba(0,0,0,0)':'rgba('+col+',0.55)';ctx.strokeStyle='rgba('+col+',0.98)';
+  ctx.lineWidth=overlay?(commit?5:3):(urgent?3:2); if(commit&&Math.floor(gameT/2)%2===0)ctx.strokeStyle='#fffaf0';
   if(type==='area'){
     const r=Math.max(54,reach);ctx.beginPath();ctx.ellipse(f.x,y,r*p,18+16*p,0,0,7);ctx.fill();ctx.stroke();
   }else if(type==='lane'){
@@ -1626,7 +1640,7 @@ function drawGroundTelegraph(f){
   }else{
     ctx.beginPath();ctx.moveTo(f.x,y);ctx.arc(f.x,y,reach*p,f.face>0?-0.38:Math.PI-0.38,f.face>0?0.38:Math.PI+0.38);ctx.closePath();ctx.fill();ctx.stroke();
   }
-  if(urgent){ctx.globalAlpha=0.75+0.25*Math.sin(gameT*0.7);ctx.fillStyle='#fff1c4';ctx.beginPath();ctx.arc(f.x,y,4,0,7);ctx.fill();}
+  if(urgent&&!overlay){ctx.globalAlpha=0.75+0.25*Math.sin(gameT*0.7);ctx.fillStyle='#fff1c4';ctx.beginPath();ctx.arc(f.x,y,4,0,7);ctx.fill();}
   ctx.restore();
 }
 function drawChapterVista(){
@@ -1752,6 +1766,9 @@ function draw(){
   // ground items (throwables lying around)
   for (const it of items){ if (!it.held && !it.thrown) drawItem(it); }
 
+  const activeWarnings=enemies.filter(e=>e.state==='attack'&&e.atkDef&&e.atkDef.tele&&e.stateT<e.atkDef.wind).length;
+  if(activeWarnings>1){ctx.fillStyle='rgba(12,8,20,0.10)';ctx.fillRect(-camX,0,worldW,H);}
+
   // attack shapes are painted on the ground beneath every fighter
   for (const e of enemies) drawGroundTelegraph(e);
 
@@ -1770,6 +1787,10 @@ function draw(){
     ...combatProps.map(p=>({z:p.z,p}))
   ].sort((a,b)=>a.z-b.z);
   for(const entry of all){if(entry.p)drawPaintedProp(entry.p);else drawFighter(entry.f);}
+
+  // A crisp outline above fighters and props keeps danger zones legible in
+  // crowds without painting translucent color over the character art.
+  for(const e of enemies)drawGroundTelegraph(e,true);
 
   // projectiles in flight
   for (const pr of projectiles){ const s=depthScale(pr.z), y=zToY(pr.z)+pr.y;
@@ -2457,6 +2478,7 @@ function enemyStatus(f){
   if (f.stunned>0) return ['STUNNED','#ffe066'];
   if (f.comboArmor>0) return ['BREAKAWAY','#9fd8ff'];
   if (f.guardBreak>0) return ['GUARD BROKEN','#ff9a72'];
+  if (!f.boss && f.throwImmune<=0 && (f.state==='hurt'||f.hp<=f.maxHp*.35)) return ['THROW READY','#ffe09a'];
   if (f.state==='block' || f.blocking) return ['BLOCKING','#9fc8ff'];
   if (f.state==='downed' || f.reform>0) return ['REFORMING','#c9b8e8'];
   if (f.phase===2) return ['ENRAGED','#ff7a4a'];
@@ -2917,7 +2939,7 @@ function drawControls(){
   controlRow(125,217,'SPACE','Jump');controlRow(125,253,'SHIFT','Dodge');
   controlRow(125,289,'ESC','Pause / resume');controlRow(125,325,'M','Open Knight’s Codex');
   controlRow(470,145,'J','Light attack / chain');controlRow(470,181,'K','Heavy attack');
-  controlRow(470,217,'L','Hold shield');controlRow(470,253,'E','Grab foe / throw');
+  controlRow(470,217,'L','Hold shield');controlRow(470,253,'E','Throw vulnerable foe / prop');
   controlRow(470,289,'J · K','Lunging Cleave');controlRow(470,325,'J · J · K','Rising Slash');
   controlRow(470,361,'J · J · J · K','Whirlwind');controlRow(470,397,'K · K','Earthbreaker');
   ctx.textAlign='center';ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText('Air attacks: SPACE, then J or K   ·   Restart fight: R',W/2,438);
@@ -3089,7 +3111,10 @@ const AUDIO = (function(){
       case 'warn_lane': glide(520,760,t,0.16,'triangle',0.11); break;
       case 'warn_area': tone(145,t,0.20,'sine',0.20); noise(t,0.12,0.12,'lowpass',500); break;
       case 'warn_magic':[330,440,554].forEach((f,i)=>tone(f,t+i*0.045,0.14,'sine',0.08)); break;
-      case 'warn_ready':tone(1120,t,0.055,'square',0.13); tone(1680,t+0.035,0.06,'square',0.10); break;
+      case 'warn_commit_melee':tone(980,t,0.055,'square',0.12);tone(1420,t+0.035,0.055,'square',0.09);break;
+      case 'warn_commit_lane':glide(680,1180,t,0.13,'sawtooth',0.11);break;
+      case 'warn_commit_area':tone(180,t,0.12,'triangle',0.14);noise(t,0.08,0.12,'lowpass',480);break;
+      case 'warn_commit_magic':tone(740,t,0.08,'sine',0.11);tone(1110,t+0.04,0.10,'sine',0.09);break;
       case 'reinforce': [262,392,523].forEach((f,i)=>tone(f,t+i*0.065,0.15,'triangle',0.12)); noise(t,0.18,0.14,'bandpass',900); break;
       case 'ui':        tone(660,t,0.05,'square',0.14); tone(990,t+0.04,0.06,'square',0.10); break;
       case 'start':     [392,523,659].forEach((f,i)=>tone(f,t+i*0.09,0.18,'triangle',0.16)); break;
