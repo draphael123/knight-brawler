@@ -2333,9 +2333,10 @@ function drawCodex(){
       ctx.fillStyle='#8f879a';ctx.font='11px ui-monospace, monospace';ctx.fillText('Meet an enemy in battle to add its field notes.',W/2,276);
     }else{
       const type=seen[codexPage],st=ENEMY_STATS[type],info=BESTIARY_INFO[type];
-      let demo;
+      let demo;ctx.save();
       try{demo=drawBestiaryPreview(type);window.__codexError='';}
       catch(err){window.__codexError=String(err&&err.stack||err);demo={move:(BESTIARY_ATTACKS[type]||['enemy'])[0],phase:'APPROACH',d:ATK.enemy};}
+      ctx.restore();
       ctx.textAlign='left';ctx.fillStyle=st.boss?'#ffbf72':'#f0e4c0';ctx.font='bold 23px Georgia, serif';ctx.fillText(ENEMY_NAMES[type]||type,466,158);
       ctx.fillStyle=st.boss?'#ff9f62':'#9d927c';ctx.font='bold 10px ui-monospace, monospace';ctx.fillText(st.boss?'BOSS SPECIMEN':'FIELD SPECIMEN',466,177);
       ctx.strokeStyle='rgba(143,116,64,.45)';ctx.beginPath();ctx.moveTo(466,190);ctx.lineTo(818,190);ctx.stroke();
