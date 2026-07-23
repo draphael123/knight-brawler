@@ -486,7 +486,7 @@ function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 
 let player, enemies, particles, floatTexts, ghosts, items, rings, projectiles;
 let scene='title', score=0, banner=null, levelIdx=0, level=null, waveNum=0, outcomeT=0, introT=0, mapSel=0;
-let codexTab='moves', codexPage=0, codexReturn='title';
+let codexTab='moves', codexPage=0, codexReturn='title', codexPreview=null, codexPreviewType='';
 // ---- side-scroll camera + encounter flow ----
 let camX=0, worldW=W;                 // camera offset and current level width
 let encounterState='walk';            // 'walk' (free traversal) | 'locked' (fighting an encounter)
@@ -1949,6 +1949,35 @@ const ATTACK_NAMES = {
   club:'CLUB SLAM', boulder:'BOULDER', wslash:'WRAITH SLASH', soulbolt:'SOUL BOLT',
   bkcombo:'BLADE COMBO', bkslam:'FLAME SLAM'
 };
+const BESTIARY_ATTACKS = {
+  grunt:['enemy','jab'], archer:['shoot'], shield:['enemy','sbash'], wolf:['wlunge'],
+  boar:['bcharge2'], spear:['thrust'], xbow:['bolt'], skeleton:['enemy'],
+  cultist:['summon'], guard:['thrust','sbash'], mage:['cast'],
+  wolfboss:['pounce','howl'], treant:['tslam','tsweep'], troll:['club','boulder'],
+  wraith:['wslash','soulbolt','summon'], blackknight:['bkcombo','bkslam','bcharge']
+};
+function drawBestiaryPreview(type){
+  if(codexPreviewType!==type){
+    codexPreview=makeFighter(0,.5,false,type);codexPreviewType=type;codexPreview.preview=true;
+  }
+  const f=codexPreview, moves=BESTIARY_ATTACKS[type]||['enemy'];
+  const cycle=170, slot=Math.floor(gameT/cycle)%moves.length, move=moves[slot], d=ATK[move]||ATK.enemy;
+  const t=Math.floor(gameT%cycle), attackStart=28, attackLength=d.wind+d.active+d.rec;
+  f.face=1;f.hp=f.maxHp;f.flash=0;f.stunned=0;f.guardBreak=0;f.y=0;f.vy=0;f.blocking=false;
+  if(t<attackStart || t>attackStart+attackLength){f.state=t<attackStart?'walk':'idle';f.stateT=t<attackStart?t:0;f.atkKind='';f.atkDef=null;}
+  else{f.state='attack';f.stateT=t-attackStart;f.atkKind=move;f.atkDef=d;}
+  ctx.save();roundRect(78,137,354,278,5);ctx.clip();
+  const pg=ctx.createLinearGradient(78,137,78,415);pg.addColorStop(0,'#32313a');pg.addColorStop(1,'#17151c');
+  ctx.fillStyle=pg;ctx.fillRect(78,137,354,278);ctx.strokeStyle='rgba(216,185,106,.16)';ctx.lineWidth=1;
+  for(let y=164;y<415;y+=25){ctx.beginPath();ctx.moveTo(78,y);ctx.lineTo(432,y);ctx.stroke();}
+  ctx.fillStyle='rgba(216,185,106,.08)';ctx.beginPath();ctx.arc(255,272,112,0,7);ctx.fill();
+  ctx.strokeStyle='rgba(216,185,106,.4)';ctx.beginPath();ctx.ellipse(255,382,122,24,0,0,7);ctx.stroke();
+  ctx.save();ctx.translate(255,384);ctx.scale(type==='treant'||type==='troll'?1.18:type==='wolfboss'?1.28:1.42);
+  ctx.translate(0,-zToY(.5));drawGroundTelegraph(f);drawFighter(f);ctx.restore();ctx.restore();
+  ctx.strokeStyle='#8f7440';ctx.lineWidth=2;roundRect(78,137,354,278,5);ctx.stroke();
+  const phase=t<attackStart?'APPROACH':t<attackStart+d.wind?'TELEGRAPH':t<attackStart+d.wind+d.active?'STRIKE':'RECOVERY';
+  return {move,phase,d};
+}
 function enemyStatus(f){
   if (f.stunned>0) return ['STUNNED','#ffe066'];
   if (f.guardBreak>0) return ['GUARD BROKEN','#ff9a72'];
@@ -1958,7 +1987,7 @@ function enemyStatus(f){
   return null;
 }
 function drawEnemyReadout(f, fx, topY, s){
-  if (f.isPlayer || f.hp<=0 || f.boss) return;
+  if (f.isPlayer || f.hp<=0 || f.boss || f.preview) return;
   const bw=Math.max(46, 48*s), x=fx-bw/2, status=enemyStatus(f);
   ctx.save(); ctx.textAlign='center';
   ctx.fillStyle='rgba(8,6,14,0.82)'; roundRect(x-3,topY-14,bw+6,status?25:19,3); ctx.fill();
@@ -2298,26 +2327,35 @@ function drawCodex(){
     if(codexPage<pages-1&&button(720,430,110,28,'NEXT →',{size:11}))codexPage++;
   } else {
     const seen=Object.keys(ENEMY_STATS).filter(type=>CAMPAIGN.seen.includes(type));
-    const perPage=4, pages=Math.max(1,Math.ceil(seen.length/perPage)), start=codexPage*perPage;
+    const pages=Math.max(1,seen.length);codexPage=clamp(codexPage,0,pages-1);
     if(!seen.length){
-      ctx.fillStyle='#cbb88a';ctx.font='16px Georgia, serif';ctx.textAlign='center';
-      ctx.fillText('No foes recorded yet.',W/2,250);
+      ctx.fillStyle='#cbb88a';ctx.font='16px Georgia, serif';ctx.textAlign='center';ctx.fillText('No foes recorded yet.',W/2,250);
       ctx.fillStyle='#8f879a';ctx.font='11px ui-monospace, monospace';ctx.fillText('Meet an enemy in battle to add its field notes.',W/2,276);
+    }else{
+      const type=seen[codexPage],st=ENEMY_STATS[type],info=BESTIARY_INFO[type],demo=drawBestiaryPreview(type);
+      ctx.textAlign='left';ctx.fillStyle=st.boss?'#ffbf72':'#f0e4c0';ctx.font='bold 23px Georgia, serif';ctx.fillText(ENEMY_NAMES[type]||type,466,158);
+      ctx.fillStyle=st.boss?'#ff9f62':'#9d927c';ctx.font='bold 10px ui-monospace, monospace';ctx.fillText(st.boss?'BOSS SPECIMEN':'FIELD SPECIMEN',466,177);
+      ctx.strokeStyle='rgba(143,116,64,.45)';ctx.beginPath();ctx.moveTo(466,190);ctx.lineTo(818,190);ctx.stroke();
+      ctx.fillStyle='#d8b96a';ctx.font='bold 10px ui-monospace, monospace';ctx.fillText('VITALS',466,214);
+      ctx.fillStyle='#eee3c5';ctx.font='13px ui-monospace, monospace';ctx.fillText(st.hp+' HP',466,234);ctx.fillText(info.speed.toUpperCase()+' SPEED',586,234);
+      ctx.fillStyle='#d8b96a';ctx.font='bold 10px ui-monospace, monospace';ctx.fillText('ATTACK REEL',466,265);
+      ctx.fillStyle='#fff0ba';ctx.font='bold 15px Georgia, serif';ctx.fillText(ATTACK_NAMES[demo.move]||demo.move.toUpperCase(),466,287);
+      const phaseColors={APPROACH:'#9db5c8',TELEGRAPH:'#ffb45f',STRIKE:'#ff6b5d',RECOVERY:'#8fd0a0'};
+      ctx.fillStyle=phaseColors[demo.phase];ctx.font='bold 10px ui-monospace, monospace';ctx.fillText('● '+demo.phase,466,307);
+      const total=demo.d.wind+demo.d.active+demo.d.rec;
+      ctx.fillStyle='#322b35';ctx.fillRect(466,318,315,6);ctx.fillStyle='#c36b4c';ctx.fillRect(466,318,315*(demo.d.wind/total),6);
+      ctx.fillStyle='#ffcf67';ctx.fillRect(466+315*(demo.d.wind/total),318,315*(demo.d.active/total),6);
+      ctx.fillStyle='#668b70';ctx.fillRect(466+315*((demo.d.wind+demo.d.active)/total),318,315*(demo.d.rec/total),6);
+      ctx.fillStyle='#807789';ctx.font='9px ui-monospace, monospace';ctx.fillText('WARNING',466,339);ctx.fillText('HIT',615,339);ctx.fillText('OPENING',704,339);
+      ctx.fillStyle='#d8b96a';ctx.font='bold 10px ui-monospace, monospace';ctx.fillText('KNOWN MOVES',466,365);
+      ctx.fillStyle='#c9bcd0';ctx.font='10px ui-monospace, monospace';ctx.fillText(info.moves,466,383);
+      ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';
+      const words=info.note.split(' ');let line='',yy=407;
+      for(const word of words){const next=line+(line?' ':'')+word;if(ctx.measureText(next).width>345){ctx.fillText(line,466,yy);line=word;yy+=15;}else line=next;}ctx.fillText(line,466,yy);
     }
-    for(let i=0;i<perPage;i++){
-      const type=seen[start+i]; if(!type) break;
-      const st=ENEMY_STATS[type], info=BESTIARY_INFO[type], y=145+i*75;
-      ctx.textAlign='left'; ctx.fillStyle=st.boss?'#ffbf72':'#f0e4c0';ctx.font='bold 15px Georgia, serif';
-      ctx.fillText((st.boss?'BOSS · ':'')+(ENEMY_NAMES[type]||type),82,y);
-      ctx.fillStyle='#d8b96a';ctx.font='bold 10px ui-monospace, monospace';
-      ctx.fillText('HP '+st.hp+'   SPEED '+info.speed,350,y);
-      ctx.fillStyle='#c9bcd0';ctx.font='10px ui-monospace, monospace';ctx.fillText('MOVES  '+info.moves,82,y+19);
-      ctx.fillStyle='#8f879a';ctx.fillText(info.note,82,y+37);
-      ctx.strokeStyle='rgba(143,116,64,0.35)';ctx.beginPath();ctx.moveTo(82,y+49);ctx.lineTo(818,y+49);ctx.stroke();
-    }
-    ctx.textAlign='center';ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText('PAGE '+(codexPage+1)+' / '+pages,W/2,455);
-    if(codexPage>0&&button(70,430,110,28,'← PREV',{size:11}))codexPage--;
-    if(codexPage<pages-1&&button(720,430,110,28,'NEXT →',{size:11}))codexPage++;
+    ctx.textAlign='center';ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText('SPECIMEN '+(codexPage+1)+' / '+pages,W/2,455);
+    if(codexPage>0&&button(70,430,110,28,'← PREV',{size:11})){codexPage--;codexPreviewType='';}
+    if(codexPage<pages-1&&button(720,430,110,28,'NEXT →',{size:11})){codexPage++;codexPreviewType='';}
   }
   if(button(20,H-48,125,32,'← RETURN',{size:12}))scene=codexReturn;
 }
