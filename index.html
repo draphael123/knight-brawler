@@ -1389,7 +1389,16 @@ function drawChapterVista(){
   if(!CHAPTER_VISTAS.complete||!CHAPTER_VISTAS.naturalWidth)return false;
   const sw=CHAPTER_VISTAS.naturalWidth/5, sh=CHAPTER_VISTAS.naturalHeight;
   const sourceX=clamp(levelIdx,0,4)*sw;
-  ctx.drawImage(CHAPTER_VISTAS,sourceX,0,sw,sh,0,0,W,H);
+  // Treat each chapter painting as a wide camera plate instead of a fixed
+  // wallpaper. Overscanning gives the camera room to travel across the art as
+  // the knight advances, while a smaller vertical drift adds depth.
+  const travel=Math.max(1,worldW-W);
+  const progress=clamp(camX/travel,0,1);
+  const scale=1.36;
+  const dw=W*scale, dh=H*scale;
+  const dx=-(dw-W)*progress;
+  const dy=-(dh-H)*(0.42+progress*0.08);
+  ctx.drawImage(CHAPTER_VISTAS,sourceX,0,sw,sh,dx,dy,dw,dh);
   // A restrained glaze keeps HUD, silhouettes, and attack warnings legible.
   ctx.fillStyle='rgba(8,10,16,.13)';ctx.fillRect(0,0,W,H);
   return true;
@@ -1456,17 +1465,21 @@ function draw(){
   ctx.globalAlpha=paintedVista?0.42:1;ctx.fillStyle = TH.path;
   ctx.beginPath(); ctx.moveTo(-70,FLOOR_TOP+34); ctx.lineTo(worldW+70,FLOOR_TOP+34); ctx.lineTo(worldW+70,H); ctx.lineTo(-70,H); ctx.closePath(); ctx.fill();
   ctx.globalAlpha=1;
-  if(!paintedVista){
-    drawChapterGround();
-    drawLevelLandmarks();
-    // ground detail: grass tufts & stones, scaled by depth
-    for (const t of tufts){ const y=zToY(t.z), s=depthScale(t.z);
-      if (t.grass){ ctx.strokeStyle=t.c; ctx.lineWidth=1.5*s; ctx.beginPath();
-        ctx.moveTo(t.x,y); ctx.lineTo(t.x-3*s,y-7*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x,y-9*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x+3*s,y-7*s); ctx.stroke(); }
-      else { ctx.fillStyle=t.c; ctx.beginPath(); ctx.ellipse(t.x,y,4*s,2.4*s,0,0,7); ctx.fill(); } }
-    for (const t of midTrees) drawTree(t);
-    for (const d of decos) drawDeco(d);
-  }
+  // These details live in world space, so they continuously enter and leave
+  // frame as the camera moves. Over a painted vista they are softened enough
+  // to blend with the illustration without obscuring combat.
+  ctx.save();
+  if(paintedVista)ctx.globalAlpha=.54;
+  drawChapterGround();
+  drawLevelLandmarks();
+  // ground detail: grass tufts & stones, scaled by depth
+  for (const t of tufts){ const y=zToY(t.z), s=depthScale(t.z);
+    if (t.grass){ ctx.strokeStyle=t.c; ctx.lineWidth=1.5*s; ctx.beginPath();
+      ctx.moveTo(t.x,y); ctx.lineTo(t.x-3*s,y-7*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x,y-9*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x+3*s,y-7*s); ctx.stroke(); }
+    else { ctx.fillStyle=t.c; ctx.beginPath(); ctx.ellipse(t.x,y,4*s,2.4*s,0,0,7); ctx.fill(); } }
+  for (const t of midTrees) drawTree(t);
+  for (const d of decos) drawDeco(d);
+  ctx.restore();
 
   // floating motes — fireflies / spores / rising embers (themed)
   for (const ff of fireflies){
