@@ -11,28 +11,13 @@
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
     overflow: hidden;
   }
-  #wrap { display: flex; flex-direction: column; align-items: center; height: 100vh; justify-content: center; gap: 10px; }
+  #wrap { display: flex; align-items: center; height: 100vh; justify-content: center; }
   canvas { background: #100d18; border: 4px solid #b79043; border-radius: 2px; image-rendering: pixelated; box-shadow: 0 0 0 2px #241b2d, 0 18px 70px rgba(0,0,0,0.78); }
-  #hud { font-size: 12px; color: #8a829e; letter-spacing: 0.5px; display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
-  #hud b { color: #d8b96a; }
-  .key { background: #2a2540; border: 1px solid #463f63; border-radius: 4px; padding: 1px 6px; color: #c9c1e0; }
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="game" width="900" height="540"></canvas>
-  <div id="hud">
-    <span><span class="key">A/D</span> <span class="key">W/S</span> move</span>
-    <span><span class="key">J</span> light chain</span>
-    <span><span class="key">K</span> heavy</span>
-    <span><span class="key">J,J,K</span> rising slash</span>
-    <span><span class="key">J,J,J,K</span> whirlwind</span>
-    <span><span class="key">Space</span> jump → <span class="key">J/K</span> aerial</span>
-    <span><span class="key">L</span> shield</span>
-    <span><span class="key">Shift</span> dodge</span>
-    <span><span class="key">E</span> pick up / throw</span>
-    <span><span class="key">R</span> reset</span>
-  </div>
 </div>
 <script>
 const cv = document.getElementById('game');
@@ -486,7 +471,7 @@ function clamp(v,a,b){ return v<a?a:v>b?b:v; }
 
 let player, enemies, particles, floatTexts, ghosts, items, rings, projectiles;
 let scene='title', score=0, banner=null, levelIdx=0, level=null, waveNum=0, outcomeT=0, introT=0, mapSel=0;
-let codexTab='moves', codexPage=0, codexReturn='title', codexPreview=null, codexPreviewType='';
+let codexTab='moves', codexPage=0, codexReturn='title', codexPreview=null, codexPreviewType='', controlsReturn='title';
 // ---- side-scroll camera + encounter flow ----
 let camX=0, worldW=W;                 // camera offset and current level width
 let encounterState='walk';            // 'walk' (free traversal) | 'locked' (fighting an encounter)
@@ -2258,11 +2243,12 @@ function drawTitle(){
   ctx.fillStyle='#f0cd65'; ctx.fillText('KNIGHT BRAWLER', W/2, 135);
   ctx.strokeStyle='rgba(240,205,101,.7)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(270,155);ctx.lineTo(630,155);ctx.stroke();
   ctx.fillStyle='#e6d7af'; ctx.font='italic 16px Georgia, serif'; ctx.fillText('A Ballad Written in Steel', W/2, 181);
-  if (button(W/2-90, 244, 180, 46, progress>0?'CONTINUE':'PLAY', {size:18})) scene='map';
-  if (button(W/2-90, 300, 180, 38, 'SETTINGS', {size:14})) scene='settings';
-  if (button(W/2-90, 348, 180, 38, "KNIGHT'S CODEX", {size:13})) openCodex('title');
+  if (button(W/2-90, 224, 180, 46, progress>0?'CONTINUE':'PLAY', {size:18})) scene='map';
+  if (button(W/2-90, 280, 180, 38, 'CONTROLS', {size:14})){controlsReturn='title';scene='controls';}
+  if (button(W/2-90, 328, 180, 38, 'SETTINGS', {size:14})) scene='settings';
+  if (button(W/2-90, 376, 180, 38, "KNIGHT'S CODEX", {size:13})) openCodex('title');
   ctx.fillStyle='#8a829e'; ctx.font='11px ui-monospace, monospace'; ctx.textAlign='center';
-  ctx.fillText('Levels cleared: '+progress+' / '+LEVELS.length+'  ·  Victories: '+(CAMPAIGN.victories||0), W/2, 410);
+  ctx.fillText('Levels cleared: '+progress+' / '+LEVELS.length+'  ·  Victories: '+(CAMPAIGN.victories||0), W/2, 438);
 }
 
 // ================= CAMPAIGN MAP =================
@@ -2365,6 +2351,44 @@ function drawCodex(){
   if(button(20,H-48,125,32,'← RETURN',{size:12}))scene=codexReturn;
 }
 
+// ================= CONTROLS / PAUSE =================
+function keyCap(x,y,label){
+  ctx.font='bold 11px ui-monospace, monospace';const w=Math.max(30,ctx.measureText(label).width+16);
+  ctx.fillStyle='#29243a';roundRect(x,y-15,w,23,4);ctx.fill();
+  ctx.strokeStyle='#665a85';ctx.lineWidth=1;roundRect(x,y-15,w,23,4);ctx.stroke();
+  ctx.fillStyle='#f1dfab';ctx.textAlign='center';ctx.fillText(label,x+w/2,y+1);return w;
+}
+function controlRow(x,y,key,label){
+  const w=keyCap(x,y,key);ctx.textAlign='left';ctx.fillStyle='#c4bacd';ctx.font='12px ui-monospace, monospace';ctx.fillText(label,x+w+14,y+1);
+}
+function drawControls(){
+  drawForestBackdrop(.72);codexPanel(90,76,720,382);
+  ctx.textAlign='center';ctx.fillStyle='#e0c46a';ctx.font='bold 30px Georgia, serif';ctx.fillText('CONTROLS',W/2,54);
+  ctx.fillStyle='#958ba0';ctx.font='10px ui-monospace, monospace';ctx.fillText('YOUR FIELD MANUAL',W/2,70);
+  ctx.textAlign='left';ctx.fillStyle='#d8b96a';ctx.font='bold 13px Georgia, serif';ctx.fillText('MOVEMENT',125,112);ctx.fillText('COMBAT',470,112);
+  controlRow(125,145,'A / D','Move left / right');controlRow(125,181,'W / S','Move up / down');
+  controlRow(125,217,'SPACE','Jump');controlRow(125,253,'SHIFT','Dodge roll');
+  controlRow(125,289,'ESC','Pause / resume');controlRow(125,325,'M','Open Knight’s Codex');
+  controlRow(470,145,'J','Light attack / chain');controlRow(470,181,'K','Heavy attack');
+  controlRow(470,217,'L','Hold shield');controlRow(470,253,'E','Interact / throw item');
+  controlRow(470,289,'J · K','Lunging Cleave');controlRow(470,325,'J · J · K','Rising Slash');
+  controlRow(470,361,'J · J · J · K','Whirlwind');controlRow(470,397,'K · K','Earthbreaker');
+  ctx.textAlign='center';ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText('Air attacks: SPACE, then J or K   ·   Restart fight: R',W/2,438);
+  if(button(20,H-48,125,32,'← RETURN',{size:12}))scene=controlsReturn;
+}
+function drawPauseMenu(){
+  draw();ctx.fillStyle='rgba(8,6,14,.68)';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(20,16,27,.96)';roundRect(W/2-150,105,300,330,8);ctx.fill();
+  ctx.strokeStyle='#b79043';ctx.lineWidth=2;roundRect(W/2-150,105,300,330,8);ctx.stroke();
+  ctx.textAlign='center';ctx.fillStyle='#f0cd65';ctx.font='bold 34px Georgia, serif';ctx.fillText('PAUSED',W/2,158);
+  ctx.fillStyle='#8f879a';ctx.font='10px ui-monospace, monospace';ctx.fillText(level?level.name.toUpperCase():'CAMPAIGN',W/2,180);
+  if(button(W/2-100,207,200,44,'RESUME',{size:16}))scene='playing';
+  if(button(W/2-100,263,200,40,'CONTROLS',{size:14})){controlsReturn='paused';scene='controls';}
+  if(button(W/2-100,315,200,40,"KNIGHT'S CODEX",{size:13}))openCodex('paused');
+  if(button(W/2-100,367,200,40,'WORLD MAP',{size:13}))scene='map';
+  ctx.fillStyle='#756d80';ctx.font='10px ui-monospace, monospace';ctx.fillText('ESC  RESUME',W/2,421);
+}
+
 // ================= SETTINGS =================
 function drawSettings(){
   drawForestBackdrop(0.5);
@@ -2414,8 +2438,10 @@ addEventListener('keydown', e=>{ const k=e.key.toLowerCase();
   }
   if (k==='escape'){
     if(scene==='codex') scene=codexReturn;
+    else if(scene==='controls') scene=controlsReturn;
+    else if(scene==='paused') scene='playing';
     else if(scene==='settings'||scene==='map') scene='title';
-    else if(scene==='playing') scene='map';
+    else if(scene==='playing') scene='paused';
   }
 });
 
@@ -2540,6 +2566,8 @@ function tick(){
   else if (scene==='victory' || scene==='defeat'){ draw(); drawEndOverlay(); }
   else if (scene==='map'){ drawMap(); }
   else if (scene==='codex'){ drawCodex(); }
+  else if (scene==='controls'){ drawControls(); }
+  else if (scene==='paused'){ drawPauseMenu(); }
   else if (scene==='settings'){ drawSettings(); }
   else { drawTitle(); }
   // background music only plays during a level (and when enabled)
