@@ -24,7 +24,7 @@ const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
 const SPRITE_SHEETS = {
-  knight:Object.assign(new Image(),{src:'assets/sprites/knight-sheet.png'}),
+  knight:Object.assign(new Image(),{src:'assets/sprites/knight-final-sheet.png'}),
   grunt:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
   shield:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
   spear:Object.assign(new Image(),{src:'assets/sprites/raider-sheet.png'}),
@@ -34,15 +34,16 @@ const SPRITE_SHEETS = {
   cultist:Object.assign(new Image(),{src:'assets/sprites/caster-sheet.png'}),
   mage:Object.assign(new Image(),{src:'assets/sprites/caster-sheet.png'}),
   skeleton:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
-  wraith:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
-  blackknight:Object.assign(new Image(),{src:'assets/sprites/royal-guard-sheet.png'}),
+  wraith:Object.assign(new Image(),{src:'assets/sprites/risen-knight-sheet.png'}),
+  blackknight:Object.assign(new Image(),{src:'assets/sprites/black-knight-sheet.png'}),
   wolf:Object.assign(new Image(),{src:'assets/sprites/wolf-sheet.png'}),
-  wolfboss:Object.assign(new Image(),{src:'assets/sprites/wolf-sheet.png'}),
+  wolfboss:Object.assign(new Image(),{src:'assets/sprites/wolf-alpha-sheet.png'}),
   boar:Object.assign(new Image(),{src:'assets/sprites/boar-sheet.png'}),
-  treant:Object.assign(new Image(),{src:'assets/sprites/treant-sheet.png'}),
-  troll:Object.assign(new Image(),{src:'assets/sprites/troll-sheet.png'})
+  treant:Object.assign(new Image(),{src:'assets/sprites/elder-treant-sheet.png'}),
+  troll:Object.assign(new Image(),{src:'assets/sprites/bridge-troll-sheet.png'})
 };
 const CHAPTER_VISTAS=Object.assign(new Image(),{src:'assets/environments/chapter-vistas.png'});
+const PAINTED_PROPS=Object.assign(new Image(),{src:'assets/environments/painted-props.png'});
 
 // ---- 2.5D world ----
 // x = horizontal screen, z = depth (0 = far/top of floor, 1 = near/bottom).
@@ -55,7 +56,7 @@ function depthScale(z){ return 0.86 + z * 0.48; }   // larger, more readable sta
 // ---- forest scenery (precomputed so it doesn't flicker) ----
 let _seed = 20260630;
 function srand(){ _seed = (_seed*1103515245 + 12345) & 0x7fffffff; return _seed/0x7fffffff; }
-const farTrees = [], midTrees = [], foreTrees = [], tufts = [], decos = [], fireflies = [], leaves = [], birds = [];
+const farTrees = [], midTrees = [], foreTrees = [], tufts = [], decos = [], paintedProps = [], fireflies = [], leaves = [], birds = [];
 
 // ---- per-level environment themes (palette + props drive a distinct biome) ----
 // indexed by levelIdx; `TH` holds the active one. Set in startLevel before buildScenery.
@@ -146,6 +147,7 @@ function drawChapterGround(){
 function buildScenery(ww){
   _seed = 20260630;                                   // deterministic per build
   farTrees.length=0; midTrees.length=0; tufts.length=0; decos.length=0;
+  paintedProps.length=0;
   fireflies.length=0; leaves.length=0; birds.length=0; foreTrees.length=0;
   const span = ww / W;                                // density multiplier vs one screen
   const T = TH;
@@ -186,6 +188,19 @@ function buildScenery(ww){
     }
   }
   decos.sort((a,b)=>a.z-b.z);
+
+  // Painted prop cells are chapter-specific. Mid props move at a slower rate
+  // than the lane while foreground props travel with the combat floor.
+  const propCount=Math.max(10,Math.round(7*span));
+  for(let i=0;i<propCount;i++){
+    paintedProps.push({
+      x:120+srand()*Math.max(200,ww-240), row:i%3,
+      z:i%3===0?.12:(i%3===1?.42:.88),
+      layer:i%3===0?'mid':'fore',
+      scale:.72+srand()*.42
+    });
+  }
+  paintedProps.sort((a,b)=>a.z-b.z);
 
   // --- floating motes (fireflies / spores / embers, themed colour + drift) ---
   for (let i=0;i<Math.round(26*span);i++){
@@ -309,6 +324,22 @@ function drawDeco(d){
     const fh=(16+6*Math.sin(gameT*0.5))*s*flick;
     ctx.fillStyle='#ff8a3a'; ctx.beginPath(); ctx.moveTo(d.x-4*s,y-d.r*s*3); ctx.quadraticCurveTo(d.x,y-d.r*s*3-fh,d.x+4*s,y-d.r*s*3); ctx.closePath(); ctx.fill();
     ctx.fillStyle='#ffe49a'; ctx.beginPath(); ctx.moveTo(d.x-2*s,y-d.r*s*3); ctx.quadraticCurveTo(d.x,y-d.r*s*3-fh*0.6,d.x+2*s,y-d.r*s*3); ctx.fill();
+  }
+}
+function drawPaintedProp(p){
+  if(!PAINTED_PROPS.complete||!PAINTED_PROPS.naturalWidth)return;
+  const sw=PAINTED_PROPS.naturalWidth/5,sh=PAINTED_PROPS.naturalHeight/3;
+  const y=zToY(p.z),depth=depthScale(p.z),dh=(p.row===0?118:p.row===1?92:82)*depth*p.scale;
+  const dw=dh*(sw/sh);
+  ctx.fillStyle='rgba(5,4,8,.24)';ctx.beginPath();ctx.ellipse(p.x,y,dw*.32,dh*.075,0,0,7);ctx.fill();
+  ctx.drawImage(PAINTED_PROPS,levelIdx*sw,p.row*sh,sw,sh,p.x-dw/2,y-dh,dw,dh);
+  // Braziers and campfires receive a subtle living glow without repainting the
+  // illustration itself.
+  if((levelIdx===0&&p.row===2)||(levelIdx===4&&p.row===1)){
+    const pulse=.8+.2*Math.sin(gameT*.16+p.x);
+    const glow=ctx.createRadialGradient(p.x,y-dh*.52,2,p.x,y-dh*.52,42*depth);
+    glow.addColorStop(0,'rgba(255,193,92,'+(.20*pulse)+')');glow.addColorStop(1,'rgba(255,130,45,0)');
+    ctx.fillStyle=glow;ctx.beginPath();ctx.arc(p.x,y-dh*.52,42*depth,0,7);ctx.fill();
   }
 }
 // tiny deterministic jitter for static deco details (no per-frame randomness)
@@ -482,7 +513,7 @@ function makeFighter(x, z, isPlayer, type='grunt'){
 function baseFields(x,z){
   return { x, z, vx:0, vz:0, vy:0, y:0, state:'idle', stateT:0,
     attackStep:0, comboTimer:0, comboSeq:[], hitstun:0, iframe:0,
-    stunHits:0, stunReset:0, comboArmor:0,
+    stunHits:0, stunReset:0, comboArmor:0, hurtSide:1,
     flash:0, atkCD:0, aiTimer:rand(20,70), hasHitThisSwing:false, bladeFlash:0,
     blocking:false, holdBlock:0, staDelay:0, guardBreak:0, aerial:false, atkKind:'',
     holding:null, stunned:0, deathT:0, chain:0 };
@@ -783,6 +814,7 @@ function tryHit(attacker, def){
 
 function hitTarget(attacker, t, def){
   if (attacker) attacker.bladeFlash = 7;                  // weapon flashes bright on contact
+  if(attacker)t.hurtSide=attacker.x<t.x?-1:1;
   const resistsLight=!!(attacker&&attacker.isPlayer&&t.comboArmor>0&&!def.launch&&!def.guardbreak);
   // shield block — only works against attacks from the front (shield side)
   if (t.blocking && t.state==='block' && (attacker.x - t.x)*t.face > -10){
@@ -1456,6 +1488,14 @@ function draw(){
     for (const t of farTrees){ ctx.globalAlpha=0.5; ctx.fillStyle=t.c; ctx.beginPath(); ctx.arc(t.x,t.y,t.r,0,7); ctx.fill(); }
     ctx.globalAlpha=1; ctx.restore();}
 
+  // Painted middle-ground set pieces move independently of both the vista and
+  // combat floor, creating a true third depth plane.
+  if(PAINTED_PROPS.complete&&PAINTED_PROPS.naturalWidth){
+    ctx.save();ctx.translate(-Math.round(camX*.56),0);ctx.globalAlpha=.82;
+    for(const p of paintedProps)if(p.layer==='mid')drawPaintedProp(p);
+    ctx.restore();
+  }
+
   // drifting mist band near the horizon
   ctx.globalAlpha=TH.mistA; ctx.fillStyle=TH.mist;
   for (let i=0;i<3;i++){ const mx=((gameT*0.3+i*340)%(W+260))-130;
@@ -1501,8 +1541,12 @@ function draw(){
     if (t.grass){ ctx.strokeStyle=t.c; ctx.lineWidth=1.5*s; ctx.beginPath();
       ctx.moveTo(t.x,y); ctx.lineTo(t.x-3*s,y-7*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x,y-9*s); ctx.moveTo(t.x,y); ctx.lineTo(t.x+3*s,y-7*s); ctx.stroke(); }
     else { ctx.fillStyle=t.c; ctx.beginPath(); ctx.ellipse(t.x,y,4*s,2.4*s,0,0,7); ctx.fill(); } }
-  for (const t of midTrees) drawTree(t);
-  for (const d of decos) drawDeco(d);
+  if(PAINTED_PROPS.complete&&PAINTED_PROPS.naturalWidth){
+    for(const p of paintedProps)if(p.layer==='fore')drawPaintedProp(p);
+  }else{
+    for (const t of midTrees) drawTree(t);
+    for (const d of decos) drawDeco(d);
+  }
   ctx.restore();
 
   // floating motes — fireflies / spores / rising embers (themed)
@@ -1565,7 +1609,10 @@ function draw(){
   for (const it of items){ if (it.held || it.thrown) drawItem(it); }
 
   // foreground trees framing the screen (in front of fighters)
-  for (const t of foreTrees){ ctx.globalAlpha=0.96; drawTree(t); } ctx.globalAlpha=1;
+  if(!PAINTED_PROPS.complete||!PAINTED_PROPS.naturalWidth){
+    for (const t of foreTrees){ ctx.globalAlpha=0.96; drawTree(t); }
+  }
+  ctx.globalAlpha=1;
 
   // particles
   for (const pa of particles){ ctx.globalAlpha = clamp(pa.life/22,0,1); ctx.fillStyle=pa.c; ctx.beginPath(); ctx.arc(pa.x,pa.y,pa.r,0,7); ctx.fill(); }
@@ -1675,6 +1722,36 @@ function drawCharacterDetails(f,w,h,s,dark,lite,trim,flashing){
 }
 
 function spriteFrameFor(f){
+  if(f.isPlayer){
+    if(f.state==='dead'||f.state==='downed')return 11;
+    if(f.state==='hurt'||f.state==='launched')return f.hurtSide<0?8:9;
+    if(f.state==='dash')return 4;
+    if(f.state==='attack'&&f.atkDef){
+      const power=['heavy','cleave','earthbreaker','special','rising','airheavy'].includes(f.atkKind);
+      if(f.stateT<f.atkDef.wind)return power?6:5;
+      if(f.stateT<f.atkDef.wind+f.atkDef.active)return power?7:5;
+      return 10;
+    }
+    if(f.state==='walk')return 2+(Math.floor(f.stateT/8)%2);
+    return Math.floor(gameT/34)%2;
+  }
+  const bossSheet=f.boss&&['wolfboss','treant','troll','wraith','blackknight'].includes(f.type);
+  if(bossSheet){
+    if(f.state==='dead'||f.state==='downed')return 11;
+    if(f.state==='hurt'||f.state==='launched')return f.hurtSide<0?8:9;
+    if(f.state==='attack'&&f.atkDef){
+      const secondMove={
+        wolfboss:['howl'],treant:['tsweep'],troll:['boulder'],
+        wraith:['soulbolt','summon'],blackknight:['bkslam','bcharge']
+      }[f.type]||[];
+      const base=secondMove.includes(f.atkKind)?6:4;
+      if(f.stateT<f.atkDef.wind)return base;
+      if(f.stateT<f.atkDef.wind+f.atkDef.active)return base+1;
+      return 10;
+    }
+    if(f.state==='walk')return 2+(Math.floor(f.stateT/8)%2);
+    return Math.floor(gameT/34)%2;
+  }
   if(f.state==='dead'||f.state==='downed')return 7;
   if(f.state==='hurt'||f.state==='launched')return 6;
   if(f.state==='attack'&&f.atkDef){
@@ -1688,27 +1765,28 @@ function spriteFrameFor(f){
 function drawSpriteFighter(f){
   const sheet=SPRITE_SHEETS[f.type];if(!sheet||!sheet.complete||!sheet.naturalWidth)return false;
   const baseY=zToY(f.z),s=depthScale(f.z),frame=spriteFrameFor(f),col=frame%4,row=Math.floor(frame/4);
-  const sw=sheet.naturalWidth/4,sh=sheet.naturalHeight/2;
+  const bossSheet=f.boss&&['wolfboss','treant','troll','wraith','blackknight'].includes(f.type);
+  const rows=(bossSheet||f.isPlayer)?3:2,sw=sheet.naturalWidth/4,sh=sheet.naturalHeight/rows;
   const cellScale={
-    wolf:2.35,wolfboss:2.35,boar:2.18,treant:1.58,troll:1.62
-  }[f.type]||(f.isPlayer?1.72:1.62);
+    wolf:2.35,wolfboss:2.32,boar:2.18,treant:1.48,troll:1.48,wraith:1.58,blackknight:1.62
+  }[f.type]||(f.isPlayer?1.62:1.62);
   const dh=f.h*s*cellScale,dw=dh*(sw/sh);
   // The generated cells have uneven transparent padding. Align the visible
   // boots rather than the cell edge to the floor for stable ground contact.
   const footSets={
-    knight:[417,422,425,426,373,374,376,387],
+    knight:[347,347,349,350,330,330,305,310,264,265,256,257],
     archer:[399,399,396,396,378,380,373,373],
     xbow:[399,399,396,396,378,380,373,373],
     cultist:[465,469,464,465,427,424,426,415],
     mage:[465,469,464,465,427,424,426,415],
     skeleton:[453,454,452,453,406,407,413,407],
-    wraith:[453,454,452,453,406,407,413,407],
-    blackknight:[453,454,452,453,406,407,413,407],
+    wraith:[362,357,348,345,316,315,321,342,279,295,300,314],
+    blackknight:[327,328,330,324,330,335,312,311,299,295,286,273],
     wolf:[406,406,404,401,337,337,346,337],
-    wolfboss:[406,406,404,401,337,337,346,337],
+    wolfboss:[319,313,282,300,320,320,296,301,257,257,257,263],
     boar:[383,386,386,386,343,327,356,350],
-    treant:[470,474,474,477,449,450,450,450],
-    troll:[416,416,415,413,406,401,406,423]
+    treant:[356,356,357,355,347,356,345,339,310,309,315,322],
+    troll:[336,337,339,345,309,314,311,311,280,283,287,312]
   };
   const footBottoms=footSets[f.type]||[404,404,402,402,375,373,374,382];
   const footBottom=footBottoms[frame]||sh;
@@ -1716,8 +1794,22 @@ function drawSpriteFighter(f){
   const walkBob=f.state==='walk'?-Math.abs(Math.sin(f.stateT*.4))*1.1*s:0;
   const idleBreath=f.state==='idle'?Math.sin(gameT*.055)*.65*s:0;
   const lift=f.y+groundCorrection+walkBob+idleBreath;
-  ctx.fillStyle='rgba(0,0,0,.38)';ctx.beginPath();ctx.ellipse(f.x,baseY,dw*.29,dw*.09,0,0,7);ctx.fill();
+  // Two-part contact shadow: a tight boot/paw anchor plus a softer ambient
+  // pool. This removes the last floating impression on bright painted floors.
+  ctx.fillStyle='rgba(0,0,0,.16)';ctx.beginPath();ctx.ellipse(f.x,baseY+1,dw*.36,dw*.115,0,0,7);ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,.40)';ctx.beginPath();ctx.ellipse(f.x,baseY,dw*.22,dw*.055,0,0,7);ctx.fill();
   ctx.save();ctx.translate(f.x,baseY+lift);ctx.scale(f.face,1);
+  if(!bossSheet&&!f.isPlayer&&f.state==='attack'&&f.atkDef){
+    const phase=clamp(f.stateT/Math.max(1,f.atkDef.wind),0,1);
+    if(f.atkDef.sweep)ctx.rotate((phase-.5)*.12);
+    else if(f.atkDef.bash)ctx.translate(phase*7*s,2*s);
+    else if(f.atkDef.charge)ctx.scale(1+.08*phase,1-.05*phase);
+    else if(f.atkDef.aoe)ctx.rotate(-.08+.16*phase);
+    else if(f.atkDef.shoot||f.atkDef.fireball||f.atkDef.soul)ctx.translate(-4*s*phase,0);
+  }
+  if(!bossSheet&&!f.isPlayer&&(f.state==='hurt'||f.state==='launched')){
+    ctx.translate(-(f.hurtSide||1)*3*s,0);ctx.rotate((f.hurtSide||1)*.065);
+  }
   if(f.state==='dash'){
     const p=clamp(f.stateT/11,0,1);
     ctx.translate(f.face*(4+Math.sin(p*Math.PI)*7)*s,4*s);
@@ -1725,7 +1817,21 @@ function drawSpriteFighter(f){
   }
   if(f.state==='dead')ctx.globalAlpha=clamp(1-(f.deathT-48)/26,0,1);
   if(f.flash>0){ctx.shadowColor='#fff';ctx.shadowBlur=14;}
+  if(f._spriteFrame!==frame){
+    f._prevSpriteFrame=f._spriteFrame==null?frame:f._spriteFrame;
+    f._spriteFrame=frame;f._spriteBlend=.82;
+  }
+  const baseAlpha=ctx.globalAlpha;
+  if(f._spriteBlend>0&&f._prevSpriteFrame!==frame){
+    const pf=f._prevSpriteFrame,pc=pf%4,pr=Math.floor(pf/4);
+    const pfoot=footBottoms[pf]||sh,pcorrection=(sh-pfoot)*(dh/sh);
+    ctx.globalAlpha=baseAlpha*f._spriteBlend;
+    ctx.drawImage(sheet,pc*sw,pr*sh,sw,sh,-dw/2,-dh+(pcorrection-groundCorrection),dw,dh);
+    f._spriteBlend=Math.max(0,f._spriteBlend-.16);
+  }
+  ctx.globalAlpha=baseAlpha*(1-(f._spriteBlend||0)*.34);
   ctx.drawImage(sheet,col*sw,row*sh,sw,sh,-dw/2,-dh,dw,dh);
+  ctx.globalAlpha=baseAlpha;
   if(f.state==='attack'&&f.atkDef&&f.stateT>=f.atkDef.wind&&f.stateT<f.atkDef.wind+f.atkDef.active+4){
     const p=clamp((f.stateT-f.atkDef.wind)/Math.max(1,f.atkDef.active),0,1);
     ctx.strokeStyle=f.isPlayer?'rgba(226,242,255,.84)':'rgba(255,190,145,.7)';
@@ -2361,18 +2467,26 @@ function button(x,y,w,h,label,opts){
 
 // ================= MENU BACKDROP =================
 function drawForestBackdrop(dim){
-  const g = ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#16241a'); g.addColorStop(0.5,'#274029'); g.addColorStop(0.56,'#3a5238'); g.addColorStop(1,'#243a22');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  const sun=ctx.createRadialGradient(690,112,8,690,112,150);
-  sun.addColorStop(0,'rgba(255,238,157,.82)');sun.addColorStop(.42,'rgba(206,158,67,.3)');sun.addColorStop(1,'rgba(206,158,67,0)');
-  ctx.fillStyle=sun;ctx.beginPath();ctx.arc(690,112,150,0,7);ctx.fill();
-  ctx.fillStyle='#102316';ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,210);ctx.bezierCurveTo(115,130,220,172,340,0);ctx.fill();
-  ctx.beginPath();ctx.moveTo(W,0);ctx.lineTo(W,220);ctx.bezierCurveTo(790,135,700,170,590,0);ctx.fill();
-  for (const t of farTrees){ ctx.globalAlpha=0.5; ctx.fillStyle=t.c; ctx.beginPath(); ctx.arc(t.x,t.y*1.2,t.r,0,7); ctx.fill(); } ctx.globalAlpha=1;
+  const painted=CHAPTER_VISTAS.complete&&CHAPTER_VISTAS.naturalWidth;
+  if(painted){
+    const sw=CHAPTER_VISTAS.naturalWidth/5,sh=CHAPTER_VISTAS.naturalHeight;
+    ctx.drawImage(CHAPTER_VISTAS,0,0,sw,sh,0,0,W,H);
+    const wash=ctx.createLinearGradient(0,0,0,H);wash.addColorStop(0,'rgba(8,11,13,.16)');wash.addColorStop(1,'rgba(8,7,12,.38)');
+    ctx.fillStyle=wash;ctx.fillRect(0,0,W,H);
+  }else{
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#16241a'); g.addColorStop(0.5,'#274029'); g.addColorStop(0.56,'#3a5238'); g.addColorStop(1,'#243a22');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    const sun=ctx.createRadialGradient(690,112,8,690,112,150);
+    sun.addColorStop(0,'rgba(255,238,157,.82)');sun.addColorStop(.42,'rgba(206,158,67,.3)');sun.addColorStop(1,'rgba(206,158,67,0)');
+    ctx.fillStyle=sun;ctx.beginPath();ctx.arc(690,112,150,0,7);ctx.fill();
+    ctx.fillStyle='#102316';ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,210);ctx.bezierCurveTo(115,130,220,172,340,0);ctx.fill();
+    ctx.beginPath();ctx.moveTo(W,0);ctx.lineTo(W,220);ctx.bezierCurveTo(790,135,700,170,590,0);ctx.fill();
+    for (const t of farTrees){ ctx.globalAlpha=0.5; ctx.fillStyle=t.c; ctx.beginPath(); ctx.arc(t.x,t.y*1.2,t.r,0,7); ctx.fill(); } ctx.globalAlpha=1;
+    for (const t of midTrees) drawTree(t);
+  }
   for (const b of birds){ b.x+=b.vx; if(b.x>W+30)b.x=-30; const by=b.y+Math.sin(gameT*0.02+b.ph)*8, fl=Math.sin(gameT*0.25+b.ph)*4;
     ctx.strokeStyle='rgba(20,30,24,0.6)'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(b.x-6,by+fl); ctx.lineTo(b.x,by); ctx.lineTo(b.x+6,by+fl); ctx.stroke(); }
-  for (const t of midTrees) drawTree(t);
   for (const ff of fireflies){ const fx=ff.x+Math.sin(gameT*0.02*ff.sp+ff.ph)*ff.amp, fy=ff.y+Math.cos(gameT*0.016*ff.sp+ff.ph)*ff.amp*0.6;
     const gl=0.4+0.6*Math.abs(Math.sin(gameT*0.05*ff.sp+ff.ph)); ctx.globalAlpha=gl*0.8; ctx.fillStyle='#e9ffa6'; ctx.beginPath(); ctx.arc(fx,fy,1.8,0,7); ctx.fill(); } ctx.globalAlpha=1;
   for (const lf of leaves){ lf.y+=lf.vy; lf.x+=Math.sin(gameT*0.03*lf.sp+lf.sway)*0.6; lf.rot+=lf.vr; if(lf.y>H+10){lf.y=-10;lf.x=Math.random()*W;}
@@ -2385,7 +2499,7 @@ function drawForestBackdrop(dim){
 // ================= TITLE =================
 function drawTitle(){
   drawForestBackdrop(0.22);
-  player.x=W/2; player.z=0.82; player.face=1; player.hp=player.maxHp; player.deathT=0;
+  player.x=W/2+238; player.z=0.82; player.face=-1; player.hp=player.maxHp; player.deathT=0;
   if (!['idle','walk'].includes(player.state)) player.state='idle';
   drawFighter(player);
   ctx.textAlign='center';
@@ -2403,19 +2517,32 @@ function drawTitle(){
 
 // ================= CAMPAIGN MAP =================
 function drawMap(){
-  drawForestBackdrop(0.32);
-  ctx.textAlign='center'; ctx.fillStyle='#e0c46a'; ctx.font='bold 26px ui-monospace, monospace';
-  ctx.fillText('CHOOSE YOUR PATH', W/2, 52);
-  ctx.strokeStyle='rgba(216,185,106,0.5)'; ctx.lineWidth=4; ctx.setLineDash([8,8]);
+  drawForestBackdrop(0.58);
+  // A living illuminated-manuscript map: soot-dark vellum, hammered-gold
+  // route ink, and chapter seals that breathe when selectable.
+  const vellum=ctx.createLinearGradient(54,74,846,482);
+  vellum.addColorStop(0,'rgba(48,39,45,.96)');vellum.addColorStop(.5,'rgba(28,25,34,.97)');vellum.addColorStop(1,'rgba(45,33,38,.96)');
+  ctx.fillStyle=vellum;roundRect(54,72,792,410,8);ctx.fill();
+  ctx.strokeStyle='#8f7440';ctx.lineWidth=3;roundRect(54,72,792,410,8);ctx.stroke();
+  ctx.strokeStyle='rgba(224,196,106,.16)';ctx.lineWidth=1;roundRect(63,81,774,392,5);ctx.stroke();
+  for(let i=0;i<28;i++){const x=74+(i*97)%744,y=96+((i*53)%350);ctx.fillStyle='rgba(216,185,106,.055)';ctx.beginPath();ctx.arc(x,y,1+(i%3),0,7);ctx.fill();}
+  ctx.textAlign='center'; ctx.fillStyle='#f0d47b'; ctx.font='bold 27px Georgia, serif';
+  ctx.fillText('THE ROAD TO THE KEEP', W/2, 51);
+  ctx.fillStyle='#8f879a';ctx.font='9px ui-monospace, monospace';ctx.fillText('AN ILLUMINATED RECORD OF THE KNIGHT’S CAMPAIGN',W/2,67);
+  ctx.save();ctx.shadowColor='rgba(224,196,106,.28)';ctx.shadowBlur=7;
+  ctx.strokeStyle='rgba(216,185,106,0.58)'; ctx.lineWidth=4; ctx.setLineDash([10,7]);ctx.lineDashOffset=-(gameT*.16);
   ctx.beginPath();
   for (let i=0;i<LEVELS.length;i++){ const n=LEVELS[i].node; if(i===0) ctx.moveTo(n.x,n.y); else ctx.lineTo(n.x,n.y); }
-  ctx.stroke(); ctx.setLineDash([]);
+  ctx.stroke(); ctx.setLineDash([]);ctx.restore();
   for (let i=0;i<LEVELS.length;i++){
     const L=LEVELS[i], n=L.node, unlocked=i<=progress, cleared=i<progress;
     const hov = unlocked && Math.hypot(mouse.x-n.x, mouse.y-n.y)<26;
+    const pulse=unlocked&&!cleared?.5+.5*Math.sin(gameT*.07+i):0;
+    ctx.fillStyle='rgba(224,196,106,'+(.05+pulse*.08)+')';ctx.beginPath();ctx.arc(n.x,n.y,32+pulse*3,0,7);ctx.fill();
     ctx.fillStyle = cleared ? '#3a8a4a' : unlocked ? (hov?'#e8c66a':'#c79a4a') : '#46435a';
-    ctx.beginPath(); ctx.arc(n.x,n.y,hov?24:20,0,7); ctx.fill();
-    ctx.strokeStyle='#0d0b14'; ctx.lineWidth=3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(n.x,n.y,hov?25:21,0,7); ctx.fill();
+    ctx.strokeStyle=unlocked?'#e0c46a':'#211d29'; ctx.lineWidth=3; ctx.stroke();
+    ctx.strokeStyle='#0d0b14';ctx.lineWidth=1;ctx.beginPath();ctx.arc(n.x,n.y,15,0,7);ctx.stroke();
     ctx.fillStyle='#0d0b14'; ctx.font='bold 16px ui-monospace, monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(cleared?'✓':(unlocked?String(i+1):'✕'), n.x, n.y+1); ctx.textBaseline='alphabetic';
     ctx.fillStyle = unlocked?'#e8e2d0':'#6a6478'; ctx.font='12px ui-monospace, monospace';
