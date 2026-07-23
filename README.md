@@ -17,7 +17,7 @@ A forest beat-’em-up — a single-file HTML5 canvas game. Play as an armored k
 | `K, K` | Earthbreaker (heavy area slam) |
 | `Space` | Jump → `J`/`K` for aerials (K = dive) |
 | `L` | Shield (costs stamina) |
-| `Shift` | Dodge roll |
+| `Shift` | Armored dodge-step |
 | `E` | Pick up / throw a rock or pot (stuns through shields) |
 | `R` | Restart level |
 | `Esc` | Back to map |
@@ -26,7 +26,7 @@ A forest beat-’em-up — a single-file HTML5 canvas game. Play as an armored k
 ## Features
 
 - **Combat feel:** combos, launchers, juggles, hitstun, hit-pause, screen shake, impact rings, blade flash
-- **Enemies:** shield-knights (block/bash, must be guard-broken or flanked), archers (telegraphed + fire arrows)
+- **Enemy roster:** raiders, guards, ranged troops, casters, beasts, undead, and five unique chapter bosses
 - **Stamina** system gating shield + roll, with guard-breaks
 - **Campaign map** with 5 levels, progress saved locally
 - **Persistent campaign record:** unlocked levels, best scores, attempts, and victories
@@ -37,10 +37,12 @@ A forest beat-’em-up — a single-file HTML5 canvas game. Play as an armored k
 - **Layered audio:** varied impacts, metal clashes, warning cues, projectiles, and reinforcement stingers
 - **Knight's Codex:** move list plus persistent field notes for discovered enemies and bosses
 - **Title screen, settings** (difficulty, screen shake, damage numbers), wave banners, score
-- **Living forest:** fireflies, falling leaves, drifting mist, birds, campfire, a distant ruined castle
-- **Distinct silhouettes:** enemy-specific proportions, stances, helmets, capes, robes, quivers, standards, and armor profiles
-- **Five visual identities:** ancient Greenwood oaks and shrine, Thornwood arches, Old Bridge masonry, Ruined Gate, and the Keep throne hall
-- **Secondary animation:** swaying foliage, cloth and banners, spectral tatters, water, fog, embers, boss breathing, creature tails, and footfall dust
+- **Final-art sprite system:** painted character sheets, 12-state hero and boss reels, directional hurt poses, recoveries, and non-graphic defeats
+- **Five unique bosses:** Dire Wolf Alpha, Elder Treant, Bridge Troll, Risen Knight, and Black Knight each use bespoke art
+- **Multilayer stages:** painted chapter plates, independently scrolling set pieces, combat-floor props, atmosphere, and foreground depth
+- **Painted prop atlas:** chapter-specific shrines, thorn arches, bridge masonry, ruins, banners, braziers, and royal statuary
+- **Living illuminated map:** animated route ink, selectable chapter seals, and persistent campaign records
+- **Animation polish:** sprite blending, committed attack silhouettes, layered contact shadows, cloth, water, fog, embers, and footfall dust
 
 Built with vanilla JavaScript + canvas. No dependencies, no build step.
 
