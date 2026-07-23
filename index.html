@@ -482,6 +482,7 @@ function makeFighter(x, z, isPlayer, type='grunt'){
 function baseFields(x,z){
   return { x, z, vx:0, vz:0, vy:0, y:0, state:'idle', stateT:0,
     attackStep:0, comboTimer:0, comboSeq:[], hitstun:0, iframe:0,
+    stunHits:0, stunReset:0, comboArmor:0,
     flash:0, atkCD:0, aiTimer:rand(20,70), hasHitThisSwing:false, bladeFlash:0,
     blocking:false, holdBlock:0, staDelay:0, guardBreak:0, aerial:false, atkKind:'',
     holding:null, stunned:0, deathT:0, chain:0 };
@@ -655,13 +656,13 @@ const ATK = {
   shoot:    { wind:26, active:1, rec:26, reach:0, dmg:0, shoot:true, tele:true },                    // archer looses
   jab:      { wind:8, active:4, rec:14, reach:50, dmg:5, knock:3, launch:0 },                       // grunt follow-up
   // new regular enemies
-  wlunge:   { wind:16, active:10, rec:22, reach:52, dmg:9, knock:7, launch:0, charge:true, chargeSpd:8, tele:true },   // wolf pounce
+  wlunge:   { wind:28, active:8, rec:32, reach:48, dmg:9, knock:7, launch:0, charge:true, chargeSpd:9, tele:true },   // wolf pounce
   bcharge2: { wind:26, active:22, rec:34, reach:54, dmg:12, knock:12, launch:0, charge:true, chargeSpd:9, guardbreak:true, tele:true }, // boar
   thrust:   { wind:22, active:6, rec:24, reach:88, dmg:9, knock:6, launch:0, tele:true },           // spear poke (long reach)
   bolt:     { wind:34, active:1, rec:30, reach:0, dmg:0, shoot:true, bolt:true, tele:true },         // crossbow
   summon:   { wind:40, active:1, rec:44, reach:0, dmg:0, summon:true, tele:true },                   // cultist raises a skeleton
   cast:     { wind:30, active:1, rec:34, reach:0, dmg:0, fireball:true, tele:true },                 // battlemage fireball
-  bite:     { wind:10, active:5, rec:18, reach:42, dmg:7, knock:4, launch:0, tele:true },           // wolf close bite
+  bite:     { wind:18, active:4, rec:24, reach:40, dmg:7, knock:4, launch:0, tele:true },           // wolf close bite
   gore:     { wind:15, active:7, rec:24, reach:48, dmg:10, knock:7, launch:0, tele:true },          // boar close tusk attack
   sweep:    { wind:28, active:9, rec:30, reach:74, dmg:8, knock:10, launch:0, sweep:true, tele:true },// spearman wide sweep
   stockbash:{ wind:16, active:5, rec:24, reach:42, dmg:7, knock:8, launch:0, bash:true, tele:true }, // crossbow/archer melee
@@ -669,7 +670,7 @@ const ATK = {
   // boss moves
   bslam:    { wind:32, active:8, rec:36, reach:84, dmg:18, knock:11, launch:-7, aoe:true, guardbreak:true, slam:true, tele:true },
   bcharge:  { wind:24, active:18, rec:32, reach:58, dmg:14, knock:12, launch:0, guardbreak:true, charge:true, chargeSpd:7, tele:true },
-  pounce:   { wind:20, active:14, rec:26, reach:62, dmg:14, knock:10, launch:-4, charge:true, chargeSpd:11, guardbreak:true, tele:true }, // dire wolf
+  pounce:   { wind:34, active:10, rec:38, reach:58, dmg:14, knock:10, launch:-4, charge:true, chargeSpd:10, guardbreak:true, tele:true }, // dire wolf
   howl:     { wind:28, active:1, rec:42, reach:0, dmg:0, howl:true, tele:true },                    // dire wolf summons wolves
   tslam:    { wind:40, active:10, rec:40, reach:74, dmg:16, knock:10, launch:-6, aoe:true, guardbreak:true, slam:true, roots:true, tele:true }, // treant
   tsweep:   { wind:30, active:12, rec:34, reach:124, dmg:14, knock:15, launch:0, sweep:true, guardbreak:true, tele:true }, // treant vine
@@ -782,6 +783,7 @@ function tryHit(attacker, def){
 
 function hitTarget(attacker, t, def){
   if (attacker) attacker.bladeFlash = 7;                  // weapon flashes bright on contact
+  const resistsLight=!!(attacker&&attacker.isPlayer&&t.comboArmor>0&&!def.launch&&!def.guardbreak);
   // shield block — only works against attacks from the front (shield side)
   if (t.blocking && t.state==='block' && (attacker.x - t.x)*t.face > -10){
     addShake(3); freeze(5);
@@ -800,14 +802,26 @@ function hitTarget(attacker, t, def){
   t.hp -= dmg;
   sfx((def.launch || def.guardbreak) ? 'hitheavy' : 'hit');
   t.flash = 6; t.iframe = 6;
-  t.hitstun = def.launch ? 40 : 16;
-  // knockback along facing
-  pushBack(t, attacker.face, def.knock);
-  // launch
-  if (def.launch){ t.vy = def.launch; t.state='launched'; t.stateT=0; }
-  else if (t.state!=='launched' && t.y<= -2){ /* keep airborne juggle */ }
-  else if (t.y < -2){ t.vy = Math.min(t.vy, -4); t.state='launched'; } // pop juggle
-  else { t.state='hurt'; t.stateT=0; }
+  let chainHits=0;
+  if(attacker && attacker.isPlayer && !t.isPlayer && !resistsLight){
+    if(t.stunReset<=0)t.stunHits=0;
+    t.stunHits++;chainHits=t.stunHits;t.stunReset=72;
+    const breakAt=t.boss?3:4;
+    if(!def.launch&&!def.guardbreak&&chainHits>=breakAt){
+      t.comboArmor=t.boss?26:20;t.stunHits=0;
+      floatTexts.push({x:t.x,y:zToY(t.z)-96,t:28,txt:'BREAKAWAY',c:'#9fd8ff'});
+    }
+  }
+  t.hitstun = resistsLight?0:(def.launch ? 40 : Math.max(6,16-Math.max(0,chainHits-1)*3));
+  // Breakaway armor preserves damage but prevents another light hit from
+  // resetting the enemy's reaction. A finisher or launcher still interrupts.
+  pushBack(t, attacker.face, def.knock*(resistsLight?.22:1));
+  if(!resistsLight){
+    if (def.launch){ t.vy = def.launch; t.state='launched'; t.stateT=0; }
+    else if (t.state!=='launched' && t.y<= -2){ /* keep airborne juggle */ }
+    else if (t.y < -2){ t.vy = Math.min(t.vy, -4); t.state='launched'; } // pop juggle
+    else { t.state='hurt'; t.stateT=0; }
+  }
 
   // JUICE: hit-pause + flash scale with the weight of the hit
   const heavy = def.launch || def.dmg>=10;
@@ -1264,6 +1278,8 @@ function updateFighter(f){
   if (f.flash>0) f.flash--;
   if (f.iframe>0) f.iframe--;
   if (f.bladeFlash>0) f.bladeFlash--;
+  if (f.stunReset>0) f.stunReset--; else f.stunHits=0;
+  if (f.comboArmor>0) f.comboArmor--;
 
   // airborne physics (jump + juggle)
   if (f.y<0 || f.vy<0){
@@ -1376,6 +1392,14 @@ function drawGroundTelegraph(f){
     const end=f.x+f.face*len, half=d.boulder?17:d.charge?14:8;
     ctx.beginPath();ctx.moveTo(f.x,y-half);ctx.lineTo(end,y-half);ctx.lineTo(end,y+half);ctx.lineTo(f.x,y+half);ctx.closePath();ctx.fill();ctx.stroke();
     ctx.globalAlpha=0.5+0.4*p;ctx.beginPath();ctx.moveTo(f.x+f.face*12,y);ctx.lineTo(f.x+f.face*len*p,y);ctx.stroke();
+    if((f.type==='wolf'||f.type==='wolfboss')&&d.charge){
+      const cueX=f.x+f.face*Math.min(len*.55,105);
+      ctx.globalAlpha=.72+.2*Math.sin(gameT*.35);ctx.fillStyle='#fff1c4';
+      ctx.font='bold 8px ui-monospace, monospace';ctx.textAlign='center';
+      ctx.fillText('DODGE UP / DOWN',cueX,y-24);
+      ctx.beginPath();ctx.moveTo(cueX-5,y-18);ctx.lineTo(cueX,y-23);ctx.lineTo(cueX+5,y-18);
+      ctx.moveTo(cueX-5,y+18);ctx.lineTo(cueX,y+23);ctx.lineTo(cueX+5,y+18);ctx.stroke();
+    }
   }else if(type==='magic'){
     const r=34+30*p;ctx.setLineDash([7,5]);ctx.beginPath();ctx.ellipse(f.x,y,r,r*0.35,0,0,7);ctx.stroke();ctx.setLineDash([]);
     ctx.beginPath();ctx.ellipse(f.x,y,r*0.55,r*0.19,0,0,7);ctx.fill();
@@ -2024,7 +2048,7 @@ const BESTIARY_INFO = {
   grunt:{speed:'Medium',moves:'Sword swing · quick follow-up',note:'Basic melee fighter. Dangerous in groups.'},
   archer:{speed:'Medium',moves:'Arrow · quick knife strike',note:'Keeps its distance, but counters when cornered.'},
   shield:{speed:'Slow',moves:'Sword swing · shield bash · block',note:'Break its guard with heavy attacks or thrown objects.'},
-  wolf:{speed:'Fast',moves:'Pounce · bite',note:'Lines up a fast mid-range leap.'},
+  wolf:{speed:'Fast',moves:'Pounce · bite',note:'Locks into a marked lane before leaping. Dodge up or down, then punish the recovery.'},
   boar:{speed:'Slow',moves:'Long charge · tusk gore',note:'Charges from range and gores at close quarters.'},
   spear:{speed:'Medium',moves:'Long spear thrust · wide sweep',note:'Alternates precise reach with broad lane control.'},
   xbow:{speed:'Slow',moves:'Heavy bolt · stock bash',note:'A dangerous shot backed by a close defensive strike.'},
@@ -2032,7 +2056,7 @@ const BESTIARY_INFO = {
   cultist:{speed:'Slow',moves:'Summon skeleton · soul bolt · staff burst',note:'A support foe with ranged magic and a close panic attack.'},
   guard:{speed:'Slow',moves:'Spear thrust · shield bash · block',note:'Armored defender with strong stamina.'},
   mage:{speed:'Medium',moves:'Fireball · arcane burst · blink',note:'Blasts nearby attackers before teleporting to safety.'},
-  wolfboss:{speed:'Very fast',moves:'Pounce · howl · summon wolves',note:'Becomes more aggressive after losing health.'},
+  wolfboss:{speed:'Very fast',moves:'Pounce · howl · summon wolves',note:'Its marked pounce lane cannot turn after the warning. Sidestep and punish the landing.'},
   treant:{speed:'Very slow',moves:'Root slam · vine sweep',note:'Huge reach and area control.'},
   troll:{speed:'Slow',moves:'Club slam · throw boulder',note:'Heavy hits with long recovery windows.'},
   wraith:{speed:'Fast',moves:'Wraith slash · soul bolt · summon',note:'Phases while conjuring undead.'},
@@ -2091,6 +2115,7 @@ function drawBestiaryPreview(type){
 }
 function enemyStatus(f){
   if (f.stunned>0) return ['STUNNED','#ffe066'];
+  if (f.comboArmor>0) return ['BREAKAWAY','#9fd8ff'];
   if (f.guardBreak>0) return ['GUARD BROKEN','#ff9a72'];
   if (f.state==='block' || f.blocking) return ['BLOCKING','#9fc8ff'];
   if (f.state==='downed' || f.reform>0) return ['REFORMING','#c9b8e8'];
